@@ -1,0 +1,110 @@
+@import "tailwindcss";
+
+/* ============================================================
+   AerYan Design System — Design Tokens & Custom Utilities
+   ============================================================ */
+
+:root {
+  /* Colors */
+  --color-primary: #895af6;
+  --color-primary-dark: #7040d6;
+  --color-secondary: #2e2249;
+  --color-accent-gold: #D4AF37;
+  --color-accent-teal: #2DD4BF;
+  --color-accent-emerald: #10b981;
+  --color-accent-coral: #fb7185;
+  --color-accent-amber: #f59e0b;
+  --color-accent-red: #ef4444;
+
+  --color-bg-dark: #151022;
+  --color-surface: rgba(30, 32, 48, 0.5);
+  --color-glass-border: rgba(255, 255, 255, 0.08);
+  --color-panel: #1e293b;
+
+  /* Font Family */
+  --font-display: "Inter", sans-serif;
+  --font-body: "Inter", sans-serif;
+}
+
+/* ---- Glass Panel Utility ---- */
+.glass-panel {
+  background: rgba(30, 32, 48, 0.5);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
+}
+
+.glass-card {
+  background: rgba(46, 34, 73, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.glass-header {
+  background: rgba(21, 16, 34, 0.85);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+/* ---- Text Gradient Utility ---- */
+.text-gradient-gold {
+  background: linear-gradient(135deg, #FCD34D 0%, #D97706 100%);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* ---- Global Styles ---- */
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: "Inter", sans-serif;
+  background-color: #151022;
+  color: #e2e8f0;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  min-height: 100vh;
+}
+
+::selection {
+  background-color: #895af6;
+  color: white;
+}
+
+/* ---- Custom Scrollbar ---- */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #151022;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #2e2249;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #895af6;
+}
+
+/* ---- Scrollbar Hide Utility ---- */
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* ---- Toast Animation ---- */
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
