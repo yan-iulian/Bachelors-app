@@ -50,7 +50,7 @@ function NotificariPanel() {
                         id: id++, tip: 'test_drive',
                         titlu: td.status === 0 ? 'Cerere nouă Test Drive' : td.status === 3 ? 'Test Drive efectuat' : `Test Drive ${tdStatusMap[td.status]}`,
                         mesaj: `${client} — ${masina}`,
-                        data: td.dataSolicitare || td.createdAt || new Date().toISOString(),
+                        data: td.dataSolicitare || td.dataProgramata,
                         citit: td.status !== 0, actiune: '/director/test-drive',
                         prioritate: td.status === 0 ? 'urgent' : 'normal',
                         icon: td.status === 0 ? 'speed' : td.status === 3 ? 'done_all' : 'speed',
@@ -66,7 +66,7 @@ function NotificariPanel() {
                         id: id++, tip: 'tranzactie',
                         titlu: t.status === 'Processing' ? 'Tranzacție de aprobat' : t.status === 'Sold' ? 'Vânzare finalizată' : 'Tranzacție anulată',
                         mesaj: `${client} — ${masina} — €${(t.suma || 0).toLocaleString()}`,
-                        data: t.dataTranzactie || t.createdAt || new Date().toISOString(),
+                        data: t.dataTranzactie,
                         citit: t.status !== 'Processing', actiune: '/director/tranzactii',
                         prioritate: t.status === 'Processing' ? 'urgent' : 'normal',
                         icon: t.status === 'Processing' ? 'payments' : 'check_circle',
@@ -82,9 +82,9 @@ function NotificariPanel() {
                         id: id++, tip: 'discount',
                         titlu: d.status === 'Processing' ? 'Cerere discount primită' : d.status === 'Approved' ? 'Discount aprobat' : 'Discount respins',
                         mesaj: `${client} — ${masina} — ${d.discountProcent}%`,
-                        data: d.createdAt || new Date().toISOString(),
+                        data: d.dataTranzactie,
                         citit: d.status !== 'Processing', actiune: '/director/discount',
-                        prioritate: d.status === 'Processing' ? 'normal' : 'normal',
+                        prioritate: d.status === 'Processing' ? 'urgent' : 'normal',
                         icon: d.status === 'Processing' ? 'sell' : 'thumb_up',
                         color: 'text-purple-400', bg: 'bg-purple-500/10', border: 'border-purple-500/20',
                     });
@@ -97,13 +97,13 @@ function NotificariPanel() {
                         id: id++, tip: r.statusReparatie === 0 ? 'estimare' : 'reparatie',
                         titlu: r.statusReparatie === 0 ? 'Reparație în așteptare' : r.statusReparatie === 2 ? 'Reparație finalizată' : 'Reparație în lucru',
                         mesaj: `${masina} — Mecanic: ${mecanic} — Cost: €${(r.cost || 0).toLocaleString()}`,
-                        data: r.dataInceput || r.createdAt || new Date().toISOString(),
+                        data: r.dataInceput || r.dataFinalizare,
                         citit: r.statusReparatie !== 0, actiune: '/director/estimari',
                         prioritate: r.statusReparatie === 0 ? 'urgent' : 'normal',
                         icon: r.statusReparatie === 0 ? 'rate_review' : r.statusReparatie === 2 ? 'verified' : 'build',
-                        color: r.statusReparatie === 0 ? 'text-red-400' : 'text-teal-400',
-                        bg: r.statusReparatie === 0 ? 'bg-red-500/10' : 'bg-teal-500/10',
-                        border: r.statusReparatie === 0 ? 'border-red-500/20' : 'border-teal-500/20',
+                        color: r.statusReparatie === 0 ? 'text-amber-400' : 'text-teal-400',
+                        bg: r.statusReparatie === 0 ? 'bg-amber-500/10' : 'bg-teal-500/10',
+                        border: r.statusReparatie === 0 ? 'border-amber-500/20' : 'border-teal-500/20',
                     });
                 });
                 generated.sort((a, b) => new Date(b.data) - new Date(a.data));
@@ -181,9 +181,9 @@ function NotificariPanel() {
                 </div>
                 <div className="flex items-center gap-3">
                     {urgente > 0 && (
-                        <div className="flex items-center gap-2 bg-red-500/15 border border-red-500/30 px-4 py-2 rounded-xl">
-                            <span className="material-symbols-outlined text-red-400 text-[18px] animate-pulse">priority_high</span>
-                            <span className="text-sm font-bold text-red-400">{urgente} urgente</span>
+                        <div className="flex items-center gap-2 bg-amber-500/15 border border-amber-500/30 px-4 py-2 rounded-xl">
+                            <span className="material-symbols-outlined text-amber-400 text-[18px]">pending_actions</span>
+                            <span className="text-sm font-bold text-amber-400">{urgente} necesită acțiune</span>
                         </div>
                     )}
                     <button onClick={markAllAsRead} disabled={necitite === 0}
@@ -255,8 +255,8 @@ function NotificariPanel() {
                                                 + (!n.citit ? ' border-l-4 ' + n.border : '')}>
                                             {/* Urgency badge */}
                                             {n.prioritate === 'urgent' && !n.citit && (
-                                                <div className="absolute top-2 right-2 bg-red-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full animate-pulse">
-                                                    URGENT
+                                                <div className="absolute top-2 right-2 bg-amber-500 text-[#151022] text-[9px] font-bold px-1.5 py-0.5 rounded-full">
+                                                    ACȚIUNE
                                                 </div>
                                             )}
                                             <div className="flex items-start gap-3">
@@ -310,8 +310,8 @@ function NotificariPanel() {
                                                     {tipFiltre.find(f => f.val === selectedNotif.tip)?.label || selectedNotif.tip}
                                                 </span>
                                                 {selectedNotif.prioritate === 'urgent' && (
-                                                    <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-red-500/10 text-red-400 border border-red-500/20">
-                                                        URGENT
+                                                    <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                                                        Acțiune necesară
                                                     </span>
                                                 )}
                                                 <span className="text-xs text-slate-400 flex items-center gap-1">
@@ -343,7 +343,7 @@ function NotificariPanel() {
                                 <div className="grid grid-cols-2 gap-4">
                                     {[
                                         { label: 'Tip', val: tipFiltre.find(f => f.val === selectedNotif.tip)?.label || selectedNotif.tip, icon: 'category' },
-                                        { label: 'Prioritate', val: selectedNotif.prioritate === 'urgent' ? 'Urgentă' : 'Normală', icon: 'priority_high' },
+                                        { label: 'Prioritate', val: selectedNotif.prioritate === 'urgent' ? 'Acțiune necesară' : 'Informativă', icon: 'priority_high' },
                                         { label: 'Status', val: selectedNotif.citit ? 'Citită' : 'Necitită', icon: selectedNotif.citit ? 'drafts' : 'mark_email_unread' },
                                         { label: 'Data & Ora', val: new Date(selectedNotif.data).toLocaleString('ro-RO', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }), icon: 'calendar_today' },
                                     ].map((item, i) => (

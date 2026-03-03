@@ -8,7 +8,7 @@ const categorieMap = { 0: 'Sedan', 1: 'SUV', 2: 'Coupe', 3: 'Hatchback', 4: 'Cab
 
 const computeAiMatch = (m) => {
     const scores = [m.scorViteza, m.scorConfort, m.scorConsum, m.scorManevrabilitate, m.scorPret,
-        m.scorDesignInterior, m.scorDesignExterior, m.scorSpatiu, m.scorAcceleratieCuplu, m.scorFrana];
+    m.scorDesignInterior, m.scorDesignExterior, m.scorSpatiu, m.scorAcceleratieCuplu, m.scorFrana];
     const valid = scores.filter(s => s != null);
     if (valid.length === 0) return 0;
     return Math.round(valid.reduce((a, b) => a + b, 0) / valid.length * 10);
@@ -48,16 +48,19 @@ function PaginaMasina() {
     const [tdSubmitted, setTdSubmitted] = useState(false);
     const [discSubmitted, setDiscSubmitted] = useState(false);
     const [submitError, setSubmitError] = useState(null);
+    const [showCumpara, setShowCumpara] = useState(false);
+    const [tipPlata, setTipPlata] = useState('Cash');
+    const [cumparaSubmitted, setCumparaSubmitted] = useState(false);
+    const [cumparaStep, setCumparaStep] = useState(1); // 1 = select payment, 2 = warning confirm
 
-    // Block body scroll when any modal is open
     useEffect(() => {
-        if (showTestDrive || showDiscount || showPDF) {
+        if (showTestDrive || showDiscount || showPDF || showCumpara) {
             document.body.style.overflow = 'hidden';
         } else {
             document.body.style.overflow = '';
         }
         return () => { document.body.style.overflow = ''; };
-    }, [showTestDrive, showDiscount, showPDF]);
+    }, [showTestDrive, showDiscount, showPDF, showCumpara]);
 
     useEffect(() => {
         const fetchData = async () => {
@@ -100,6 +103,17 @@ function PaginaMasina() {
             }
         };
         fetchData();
+    }, [id]);
+
+    // Save this car to "recently viewed" list in localStorage
+    useEffect(() => {
+        try {
+            const stored = JSON.parse(localStorage.getItem('recentlyViewedCars') || '[]');
+            const carId = Number(id);
+            // Remove if already exists, then prepend
+            const updated = [carId, ...stored.filter(x => x !== carId)].slice(0, 10);
+            localStorage.setItem('recentlyViewedCars', JSON.stringify(updated));
+        } catch { /* ignore */ }
     }, [id]);
 
     // Reset scroll & thumbnail when navigating between cars
@@ -176,7 +190,7 @@ table.specs tr:nth-child(even) td{background:#f8f7ff}
     <div class="logo-sub">Auto Dealership — Fișă Tehnică Vehicul</div>
   </div>
   <div class="meta">
-    <div>Nr. Document: <strong>FT-${String(masina.idMasina).padStart(4,'0')}</strong></div>
+    <div>Nr. Document: <strong>FT-${String(masina.idMasina).padStart(4, '0')}</strong></div>
     <div>Data generării: ${dataGen}</div>
     <div>Ora: ${oraGen}</div>
   </div>
@@ -317,6 +331,25 @@ ${masina.descriere ? `
         }
     };
 
+    const handleCumparaSubmit = async () => {
+        try {
+            setSubmitError(null);
+            const pretFinal = masina.esteInPromotie && masina.pretPromotional ? masina.pretPromotional : masina.pretEuro;
+            await apiPost('/api/tranzactii', {
+                idMasina: masina.idMasina,
+                suma: pretFinal,
+                tipPlata: tipPlata,
+                tip: 'Vanzare',
+            });
+            setCumparaSubmitted(true);
+            // Update car status in real-time
+            setMasina(prev => ({ ...prev, status: 'Rezervat' }));
+        } catch (err) {
+            setSubmitError(err.message || 'Eroare la inițierea tranzacției');
+            setCumparaStep(1); // go back to step 1 on error
+        }
+    };
+
     if (loading) {
         return (
             <div className="flex flex-1 items-center justify-center min-h-[60vh]">
@@ -413,56 +446,90 @@ ${masina.descriere ? `
         { icon: 'description', title: 'Descriere Detaliată', items: [masina.descriere] },
     ] : [];
 
+    const isIndisponibil = masina.status !== 'Disponibil';
+    const statusBadge = {
+        'Disponibil': { text: 'DISPONIBIL', color: '#10b981', bg: '' },
+        'Rezervat': { text: 'REZERVAT', color: '#f59e0b', bg: 'bg-[#f59e0b]/10' },
+        'Vandut': { text: 'VÂNDUT', color: '#ef4444', bg: 'bg-[#ef4444]/10' },
+    }[masina.status] || { text: masina.status?.toUpperCase() || 'NECUNOSCUT', color: '#94a3b8', bg: '' };
+
     return (
         <main className="relative pb-20 overflow-x-hidden">
             {/* Hero Section */}
             <section className="relative w-full h-[60vh] lg:h-[75vh] group">
-                <div
-                    className="absolute inset-0 bg-cover bg-center"
-                    style={{ backgroundImage: `url('${masina.imagine}')` }}
-                >
-                    <div className="absolute inset-0 bg-gradient-to-t from-[#151022] via-[#151022]/20 to-transparent"></div>
-                </div>
-
-                {/* Overlay Controls & Badges */}
-                <div className="absolute inset-0 flex flex-col justify-between p-6 lg:p-12 max-w-[1440px] mx-auto w-full">
-                    {/* Top Badges */}
-                    <div className="flex flex-wrap gap-3 mt-4">
-                        <div className="glass-panel px-4 py-1.5 rounded-full flex items-center gap-2 border-l-4 border-l-[#10b981]">
-                            <span className="size-2 rounded-full bg-[#10b981] animate-pulse"></span>
-                            <span className="text-xs font-bold tracking-wider text-white">DISPONIBIL</span>
-                        </div>
-                        {masina.esteInPromotie && (
-                            <div className="glass-panel px-4 py-1.5 rounded-full flex items-center gap-2 border-l-4 border-l-[#fb7185] bg-[#fb7185]/10">
-                                <span className="text-xs font-bold tracking-wider text-[#fb7185]">PROMOȚIE -15%</span>
-                            </div>
-                        )}
-                    </div>
-
-                    {/* Navigation Arrows */}
-                    <div className="absolute inset-y-0 left-4 right-4 flex items-center justify-between pointer-events-none">
-                        <button className="pointer-events-auto size-12 rounded-full glass-panel flex items-center justify-center hover:bg-white/10 transition-all transform hover:scale-105">
-                            <span className="material-symbols-outlined">chevron_left</span>
-                        </button>
-                        <button className="pointer-events-auto size-12 rounded-full glass-panel flex items-center justify-center hover:bg-white/10 transition-all transform hover:scale-105">
-                            <span className="material-symbols-outlined">chevron_right</span>
-                        </button>
-                    </div>
-
-                    {/* Bottom: Thumbnails + 360 */}
-                    <div className="flex flex-col lg:flex-row items-end lg:items-center justify-between gap-6 w-full">
-                        {/* Thumbnails */}
-                        <div className="hidden lg:flex gap-3 overflow-x-auto pb-2 scrollbar-hide max-w-2xl">
+                {(() => {
+                    const allImages = (masina.imagini && masina.imagini.length > 0)
+                        ? masina.imagini.map(img => `${API_URL}${img.caleFisier}`)
+                        : [masina.imagine];
+                    const heroImg = allImages[currentThumb] || allImages[0];
+                    return (
+                        <>
                             <div
-                                className={`w-24 h-16 rounded-lg bg-cover bg-center cursor-pointer transition-opacity border-2 border-[#895af6] shadow-lg shadow-[#895af6]/20`}
-                                style={{ backgroundImage: `url('${masina.imagine}')` }}
-                            ></div>
-                            <div className="w-24 h-16 rounded-lg border border-white/20 flex items-center justify-center glass-panel cursor-pointer hover:bg-white/10 transition-colors">
-                                <span className="text-xs font-bold">+12</span>
+                                className="absolute inset-0 bg-cover bg-center transition-all duration-500"
+                                style={{ backgroundImage: `url('${heroImg}')` }}
+                            >
+                                <div className="absolute inset-0 bg-gradient-to-t from-[#151022] via-[#151022]/20 to-transparent"></div>
                             </div>
-                        </div>
-                    </div>
-                </div>
+
+                            {/* Overlay Controls & Badges */}
+                            <div className="absolute inset-0 flex flex-col justify-between p-6 lg:p-12 max-w-[1440px] mx-auto w-full">
+                                {/* Top Badges */}
+                                <div className="flex flex-wrap gap-3 mt-4">
+                                    <div className={`glass-panel px-4 py-1.5 rounded-full flex items-center gap-2 border-l-4 ${statusBadge.bg}`} style={{ borderLeftColor: statusBadge.color }}>
+                                        <span className="size-2 rounded-full animate-pulse" style={{ backgroundColor: statusBadge.color }}></span>
+                                        <span className="text-xs font-bold tracking-wider text-white">{statusBadge.text}</span>
+                                    </div>
+                                    {masina.esteInPromotie && (
+                                        <div className="glass-panel px-4 py-1.5 rounded-full flex items-center gap-2 border-l-4 border-l-[#fb7185] bg-[#fb7185]/10">
+                                            <span className="text-xs font-bold tracking-wider text-[#fb7185]">PROMOȚIE -{Math.round((1 - masina.pretPromotional / masina.pretEuro) * 100)}%</span>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Navigation Arrows */}
+                                {allImages.length > 1 && (
+                                    <div className="absolute inset-y-0 left-4 right-4 flex items-center justify-between pointer-events-none">
+                                        <button onClick={() => setCurrentThumb((currentThumb - 1 + allImages.length) % allImages.length)}
+                                            className="pointer-events-auto size-12 rounded-full glass-panel flex items-center justify-center hover:bg-white/10 transition-all transform hover:scale-105">
+                                            <span className="material-symbols-outlined">chevron_left</span>
+                                        </button>
+                                        <button onClick={() => setCurrentThumb((currentThumb + 1) % allImages.length)}
+                                            className="pointer-events-auto size-12 rounded-full glass-panel flex items-center justify-center hover:bg-white/10 transition-all transform hover:scale-105">
+                                            <span className="material-symbols-outlined">chevron_right</span>
+                                        </button>
+                                    </div>
+                                )}
+
+                                {/* Bottom: Thumbnails */}
+                                <div className="flex flex-col lg:flex-row items-end lg:items-center justify-between gap-6 w-full">
+                                    <div className="hidden lg:flex gap-3 overflow-x-auto pb-2 scrollbar-hide max-w-2xl">
+                                        {allImages.slice(0, 5).map((img, i) => (
+                                            <div
+                                                key={i}
+                                                onClick={() => setCurrentThumb(i)}
+                                                className={`w-24 h-16 rounded-lg bg-cover bg-center cursor-pointer transition-all border-2 ${currentThumb === i
+                                                        ? 'border-[#895af6] shadow-lg shadow-[#895af6]/20 scale-105'
+                                                        : 'border-white/20 opacity-60 hover:opacity-100'
+                                                    }`}
+                                                style={{ backgroundImage: `url('${img}')` }}
+                                            ></div>
+                                        ))}
+                                        {allImages.length > 5 && (
+                                            <div className="w-24 h-16 rounded-lg border border-white/20 flex items-center justify-center glass-panel cursor-pointer hover:bg-white/10 transition-colors">
+                                                <span className="text-xs font-bold">+{allImages.length - 5}</span>
+                                            </div>
+                                        )}
+                                    </div>
+                                    {allImages.length > 1 && (
+                                        <span className="text-xs text-slate-400 glass-panel px-3 py-1 rounded-full">
+                                            {currentThumb + 1} / {allImages.length}
+                                        </span>
+                                    )}
+                                </div>
+                            </div>
+                        </>
+                    );
+                })()}
             </section>
 
             {/* Main Grid */}
@@ -499,9 +566,9 @@ ${masina.descriere ? `
                                     )}
                                 </div>
                                 {economie > 0 && (
-                                <div className="mt-2 inline-flex">
-                                    <span className="bg-[#D4AF37]/20 text-[#D4AF37] text-xs font-bold px-2 py-1 rounded">Economisești €{economie.toLocaleString()}</span>
-                                </div>
+                                    <div className="mt-2 inline-flex">
+                                        <span className="bg-[#D4AF37]/20 text-[#D4AF37] text-xs font-bold px-2 py-1 rounded">Economisești €{economie.toLocaleString()}</span>
+                                    </div>
                                 )}
                             </div>
                             <div className="flex flex-col gap-3 min-w-[200px]">
@@ -620,7 +687,16 @@ ${masina.descriere ? `
 
                         {/* Action Stack */}
                         <div className="flex flex-col gap-3 sticky top-24">
-                            <button onClick={() => setShowTestDrive(true)} className="w-full py-4 rounded-xl bg-gradient-to-r from-[#895af6] to-[#7040d6] hover:brightness-110 text-white font-bold text-lg shadow-lg shadow-[#895af6]/25 transition-all flex items-center justify-center gap-3">
+                            {isIndisponibil && (
+                                <div className={`w-full py-3 rounded-xl border flex items-center justify-center gap-2 text-sm font-bold ${masina.status === 'Rezervat' ? 'bg-amber-500/10 border-amber-500/30 text-amber-400' : 'bg-red-500/10 border-red-500/30 text-red-400'
+                                    }`}>
+                                    <span className="material-symbols-outlined text-[18px]">{masina.status === 'Rezervat' ? 'lock' : 'block'}</span>
+                                    {masina.status === 'Rezervat' ? 'Mașină Rezervată — Tranzacție în curs' : 'Mașină Vândută'}
+                                </div>
+                            )}
+                            <button onClick={() => setShowTestDrive(true)} disabled={isIndisponibil}
+                                className={`w-full py-4 rounded-xl text-white font-bold text-lg shadow-lg transition-all flex items-center justify-center gap-3 ${isIndisponibil ? 'bg-slate-700 opacity-40 cursor-not-allowed shadow-none' : 'bg-gradient-to-r from-[#895af6] to-[#7040d6] hover:brightness-110 shadow-[#895af6]/25'
+                                    }`}>
                                 <span className="material-symbols-outlined">directions_car</span>
                                 Solicită Test Drive
                             </button>
@@ -640,9 +716,17 @@ ${masina.descriere ? `
                                     Fișă PDF
                                 </button>
                             </div>
-                            <button onClick={() => setShowDiscount(true)} className="w-full py-3 rounded-xl border border-[#D4AF37]/30 hover:bg-[#D4AF37]/10 text-[#D4AF37] font-bold text-sm transition-colors flex items-center justify-center gap-2">
+                            <button onClick={() => setShowDiscount(true)} disabled={isIndisponibil}
+                                className={`w-full py-3 rounded-xl font-bold text-sm transition-colors flex items-center justify-center gap-2 ${isIndisponibil ? 'border border-slate-600 text-slate-600 opacity-40 cursor-not-allowed' : 'border border-[#D4AF37]/30 hover:bg-[#D4AF37]/10 text-[#D4AF37]'
+                                    }`}>
                                 <span className="material-symbols-outlined text-[18px]">sell</span>
                                 Solicită Discount
+                            </button>
+                            <button onClick={() => setShowCumpara(true)} disabled={isIndisponibil}
+                                className={`w-full py-4 rounded-xl text-white font-bold text-lg shadow-lg transition-all flex items-center justify-center gap-3 ${isIndisponibil ? 'bg-slate-700 opacity-40 cursor-not-allowed shadow-none' : 'bg-gradient-to-r from-[#10b981] to-[#059669] hover:brightness-110 shadow-[#10b981]/25'
+                                    }`}>
+                                <span className="material-symbols-outlined">shopping_cart</span>
+                                Cumpără Acum
                             </button>
 
                             {/* Contact Card */}
@@ -672,11 +756,11 @@ ${masina.descriere ? `
                     <h2 className="text-2xl font-bold">Mașini Similare</h2>
                 </div>
                 <div className="flex overflow-x-auto gap-4 pb-4 snap-x snap-mandatory -mx-4 px-4 lg:px-0"
-                     style={{ scrollbarWidth: 'thin', scrollbarColor: '#895af6 transparent' }}>
+                    style={{ scrollbarWidth: 'thin', scrollbarColor: '#895af6 transparent' }}>
                     {masiniSimilare.map(car => (
                         <div key={car.idMasina}
-                             className="min-w-[200px] w-[200px] snap-start glass-panel rounded-xl overflow-hidden group hover:border-[#895af6]/50 transition-colors cursor-pointer"
-                             onClick={() => navigate(`/client/masina/${car.idMasina}`)}>
+                            className="min-w-[200px] w-[200px] snap-start glass-panel rounded-xl overflow-hidden group hover:border-[#895af6]/50 transition-colors cursor-pointer"
+                            onClick={() => navigate(`/client/masina/${car.idMasina}`)}>
                             <div
                                 className="h-28 bg-cover bg-center"
                                 style={{ backgroundImage: `url('${car.imagine}')` }}
@@ -742,7 +826,7 @@ ${masina.descriere ? `
                                             <select value={tdForm.ora} onChange={e => setTdForm(f => ({ ...f, ora: e.target.value }))}
                                                 className="w-full p-3 text-sm text-white bg-white/5 border border-white/10 rounded-xl focus:ring-[#895af6] focus:border-[#895af6] outline-none transition">
                                                 <option value="" className="bg-[#1e202d]">Selectează</option>
-                                                {['09:00','10:00','11:00','12:00','13:00','14:00','15:00','16:00','17:00'].map(h => (
+                                                {['09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00'].map(h => (
                                                     <option key={h} value={h} className="bg-[#1e202d]">{h}</option>
                                                 ))}
                                             </select>
@@ -853,6 +937,157 @@ ${masina.descriere ? `
                                         className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-gradient-to-r from-[#D4AF37] to-[#c9a432] text-[#151022] font-bold text-sm shadow-lg hover:shadow-[#D4AF37]/20 hover:scale-105 transition transform disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:scale-100">
                                         <span className="material-symbols-outlined text-[18px]">send</span>
                                         Trimite Cerere Discount
+                                    </button>
+                                </div>
+                            </>
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {/* ==================== Purchase Modal ==================== */}
+            {showCumpara && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                    <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => { setShowCumpara(false); setCumparaSubmitted(false); setTipPlata('Cash'); setCumparaStep(1); }}></div>
+                    <div className="relative glass-panel rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto border border-white/10 shadow-2xl">
+                        {cumparaSubmitted ? (
+                            <div className="p-10 flex flex-col items-center gap-5 text-center animate-[scaleIn_0.3s_ease-out]">
+                                <div className="size-20 rounded-full bg-emerald-500/20 flex items-center justify-center">
+                                    <span className="material-symbols-outlined text-emerald-400 text-4xl">check_circle</span>
+                                </div>
+                                <h2 className="text-2xl font-bold text-white">Cerere de Achiziție Trimisă!</h2>
+                                <p className="text-slate-400 text-sm max-w-sm">Mașina a fost rezervată în numele tău. Directorul va analiza cererea și va aproba tranzacția.</p>
+                                <div className="bg-white/[0.03] rounded-xl p-4 border border-white/5 w-full">
+                                    <div className="flex justify-between text-sm">
+                                        <span className="text-slate-400">Total</span>
+                                        <span className="text-[#D4AF37] font-bold text-lg">€{pretCurent.toLocaleString()}</span>
+                                    </div>
+                                    <div className="flex justify-between text-sm mt-2">
+                                        <span className="text-slate-400">Metoda de plată</span>
+                                        <span className="text-white font-medium">{tipPlata}</span>
+                                    </div>
+                                    <div className="flex justify-between text-sm mt-2">
+                                        <span className="text-slate-400">Status mașină</span>
+                                        <span className="text-amber-400 font-bold">Rezervată</span>
+                                    </div>
+                                </div>
+                                <button onClick={() => { setShowCumpara(false); setCumparaSubmitted(false); setTipPlata('Cash'); setCumparaStep(1); }}
+                                    className="px-8 py-3 rounded-xl bg-emerald-500 text-white font-bold text-sm hover:bg-emerald-600 transition flex items-center gap-2">
+                                    <span className="material-symbols-outlined text-[18px]">check_circle</span>
+                                    Succes — Închide
+                                </button>
+                            </div>
+                        ) : cumparaStep === 2 ? (
+                            /* Step 2: Warning confirmation */
+                            <div className="p-8 flex flex-col items-center gap-5 text-center">
+                                <div className="size-20 rounded-full bg-amber-500/20 flex items-center justify-center">
+                                    <span className="material-symbols-outlined text-amber-400 text-4xl">warning</span>
+                                </div>
+                                <h2 className="text-xl font-bold text-white">Ești sigur că vrei să cumperi?</h2>
+                                <div className="bg-amber-500/5 rounded-xl p-4 border border-amber-500/20 w-full text-left space-y-2">
+                                    <p className="text-sm text-amber-300 font-medium flex items-start gap-2">
+                                        <span className="material-symbols-outlined text-[16px] mt-0.5">directions_car</span>
+                                        {masina.marca} {masina.model} — <span className="text-[#D4AF37] font-bold">€{pretCurent.toLocaleString()}</span>
+                                    </p>
+                                    <p className="text-sm text-amber-300 font-medium flex items-start gap-2">
+                                        <span className="material-symbols-outlined text-[16px] mt-0.5">{tipPlata === 'Cash' ? 'payments' : tipPlata === 'Card' ? 'credit_card' : 'account_balance'}</span>
+                                        Plata: {tipPlata}
+                                    </p>
+                                </div>
+                                <p className="text-xs text-slate-400">După confirmare, mașina va fi <strong className="text-amber-400">rezervată</strong> și nu va mai fi disponibilă altor clienți până la verdictul Directorului.</p>
+                                {submitError && (
+                                    <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-3 flex items-center gap-2 w-full">
+                                        <span className="material-symbols-outlined text-red-400 text-[16px]">error</span>
+                                        <p className="text-xs text-red-400">{submitError}</p>
+                                    </div>
+                                )}
+                                <div className="flex gap-3 w-full">
+                                    <button onClick={() => setCumparaStep(1)}
+                                        className="flex-1 px-4 py-2.5 rounded-xl border border-white/10 text-slate-300 hover:bg-white/5 text-sm font-medium transition">Înapoi</button>
+                                    <button onClick={handleCumparaSubmit}
+                                        className="flex-1 px-4 py-2.5 rounded-xl bg-gradient-to-r from-[#10b981] to-[#059669] text-white font-bold text-sm shadow-lg hover:scale-105 transition transform flex items-center justify-center gap-2">
+                                        <span className="material-symbols-outlined text-[18px]">shopping_cart_checkout</span>
+                                        Confirmă Achiziția
+                                    </button>
+                                </div>
+                            </div>
+                        ) : (
+                            /* Step 1: Select payment method */
+                            <>
+                                <div className="flex items-center justify-between p-6 border-b border-white/10">
+                                    <div className="flex items-center gap-3">
+                                        <div className="size-10 bg-[#10b981]/20 rounded-lg flex items-center justify-center">
+                                            <span className="material-symbols-outlined text-[#10b981]">shopping_cart</span>
+                                        </div>
+                                        <div>
+                                            <h2 className="text-lg font-bold text-white">Cumpără Mașina</h2>
+                                            <p className="text-xs text-slate-400">{masina.marca} {masina.model}</p>
+                                        </div>
+                                    </div>
+                                    <button onClick={() => setShowCumpara(false)} className="size-9 rounded-full hover:bg-white/10 flex items-center justify-center transition">
+                                        <span className="material-symbols-outlined text-slate-400">close</span>
+                                    </button>
+                                </div>
+                                <div className="p-6 space-y-5">
+                                    {/* Car Summary */}
+                                    <div className="flex items-center gap-4 bg-white/[0.03] rounded-xl p-4 border border-white/5">
+                                        <div className="size-16 rounded-lg bg-cover bg-center shrink-0" style={{ backgroundImage: `url('${masina.imagine}')` }}></div>
+                                        <div className="flex-1">
+                                            <p className="text-sm font-bold text-white">{masina.marca} {masina.model}</p>
+                                            <p className="text-xs text-slate-400">{masina.combustibilText} · {masina.categorieText} · {masina.anFabricatie}</p>
+                                            <p className="text-xs text-slate-400 mt-0.5">{masina.km.toLocaleString()} km</p>
+                                        </div>
+                                        <div className="text-right">
+                                            <p className="text-2xl font-bold text-[#D4AF37]">€{pretCurent.toLocaleString()}</p>
+                                            {economie > 0 && <span className="text-[10px] text-emerald-400">-€{economie.toLocaleString()}</span>}
+                                        </div>
+                                    </div>
+
+                                    {/* Payment Method */}
+                                    <div>
+                                        <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3 block">Metodă de Plată</label>
+                                        <div className="grid grid-cols-3 gap-3">
+                                            {[
+                                                { val: 'Cash', icon: 'payments', label: 'Cash' },
+                                                { val: 'Card', icon: 'credit_card', label: 'Card' },
+                                                { val: 'Rate', icon: 'account_balance', label: 'Rate' },
+                                            ].map(opt => (
+                                                <button key={opt.val} onClick={() => setTipPlata(opt.val)}
+                                                    className={`flex flex-col items-center gap-2 p-4 rounded-xl border transition-all ${tipPlata === opt.val
+                                                        ? 'bg-[#10b981]/10 border-[#10b981]/50 text-[#10b981] shadow-lg shadow-[#10b981]/10'
+                                                        : 'bg-white/[0.03] border-white/10 text-slate-400 hover:bg-white/5'
+                                                        }`}>
+                                                    <span className="material-symbols-outlined text-2xl">{opt.icon}</span>
+                                                    <span className="text-xs font-bold">{opt.label}</span>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    {/* Summary */}
+                                    <div className="bg-white/[0.03] rounded-xl p-4 border border-white/5 space-y-2">
+                                        <div className="flex justify-between text-sm">
+                                            <span className="text-slate-400">Preț vehicul</span>
+                                            <span className="text-white">€{masina.pretEuro.toLocaleString()}</span>
+                                        </div>
+                                        {economie > 0 && (
+                                            <div className="flex justify-between text-sm">
+                                                <span className="text-slate-400">Discount promoțional</span>
+                                                <span className="text-emerald-400">-€{economie.toLocaleString()}</span>
+                                            </div>
+                                        )}
+                                        <div className="border-t border-white/10 pt-2 flex justify-between">
+                                            <span className="text-white font-bold">Total de plată</span>
+                                            <span className="text-[#D4AF37] font-bold text-xl">€{pretCurent.toLocaleString()}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="flex items-center justify-between p-6 border-t border-white/10">
+                                    <button onClick={() => setShowCumpara(false)} className="px-5 py-2.5 rounded-xl border border-white/10 text-slate-300 hover:bg-white/5 text-sm font-medium transition">Anulează</button>
+                                    <button onClick={() => setCumparaStep(2)}
+                                        className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-gradient-to-r from-[#10b981] to-[#059669] text-white font-bold text-sm shadow-lg hover:shadow-[#10b981]/20 hover:scale-105 transition transform">
+                                        <span className="material-symbols-outlined text-[18px]">arrow_forward</span>
+                                        Continuă
                                     </button>
                                 </div>
                             </>

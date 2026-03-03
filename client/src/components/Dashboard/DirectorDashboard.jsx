@@ -64,6 +64,11 @@ function DirectorDashboard() {
     const cereriPending = stats?.cereriPending || 0;
     const clientiActivi = stats?.clientiActivi || 0;
     const vanzariFormatted = totalVanzari >= 1000000 ? `€${(totalVanzari / 1000000).toFixed(1)}M` : totalVanzari >= 1000 ? `€${(totalVanzari / 1000).toFixed(0)}K` : `€${totalVanzari}`;
+    const vanzariLunare = stats?.vanzariLunare || [];
+    const clientiRecenti = stats?.clientiRecenti || [];
+    const currentYear = new Date().getFullYear();
+    const monthNames = ['Ian', 'Feb', 'Mar', 'Apr', 'Mai', 'Iun', 'Iul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const maxVanzare = Math.max(...vanzariLunare.map(v => v.total), 1);
 
     return (
         <main className="flex-1 max-w-[1600px] mx-auto w-full p-6 space-y-6">
@@ -140,12 +145,24 @@ function DirectorDashboard() {
                         <h3 className="text-3xl font-bold text-white mt-2 tracking-tight">{clientiActivi}</h3>
                     </div>
                     <div className="flex -space-x-2 overflow-hidden mt-auto pl-1">
-                        {['bg-purple-600', 'bg-blue-600', 'bg-teal-600', 'bg-emerald-600'].map((color, i) => (
-                            <div key={i} className={`inline-flex items-center justify-center size-8 rounded-full ring-2 ring-bg-dark ${color} text-xs font-medium text-white`}>
-                                {String.fromCharCode(65 + i)}
-                            </div>
-                        ))}
-                        <div className="flex items-center justify-center size-8 rounded-full ring-2 ring-bg-dark bg-teal-900 text-xs font-medium text-teal-200">+12</div>
+                        {clientiRecenti.length > 0 ? (
+                            <>
+                                {clientiRecenti.map((c, i) => {
+                                    const colors = ['bg-purple-600', 'bg-blue-600', 'bg-teal-600', 'bg-emerald-600', 'bg-indigo-600'];
+                                    const initials = `${(c.nume || '')[0] || ''}${(c.prenume || '')[0] || ''}`.toUpperCase();
+                                    return (
+                                        <div key={c.idUtilizator} className={`inline-flex items-center justify-center size-8 rounded-full ring-2 ring-[#151022] ${colors[i % colors.length]} text-xs font-medium text-white`} title={`${c.nume} ${c.prenume}`}>
+                                            {initials}
+                                        </div>
+                                    );
+                                })}
+                                {clientiActivi > clientiRecenti.length && (
+                                    <div className="flex items-center justify-center size-8 rounded-full ring-2 ring-[#151022] bg-teal-900 text-xs font-medium text-teal-200">+{clientiActivi - clientiRecenti.length}</div>
+                                )}
+                            </>
+                        ) : (
+                            <span className="text-xs text-slate-500">Niciun client încă</span>
+                        )}
                     </div>
                 </div>
             </section>
@@ -153,41 +170,91 @@ function DirectorDashboard() {
             {/* Charts & Lists Section */}
             <section className="grid grid-cols-1 lg:grid-cols-12 gap-6">
                 {/* Chart Area (8 cols) */}
-                <div className="lg:col-span-8 glass-panel rounded-xl p-6 flex flex-col min-h-[420px]">
-                    <div className="flex justify-between items-center mb-6">
-                        <h2 className="text-white text-lg font-bold">Vânzări 2024</h2>
-                        <select className="bg-secondary/50 border-none text-white text-sm rounded-lg focus:ring-1 focus:ring-primary py-1 px-3">
-                            <option>Yearly</option>
-                            <option>Quarterly</option>
-                            <option>Monthly</option>
-                        </select>
+                <div className="lg:col-span-8 glass-panel rounded-xl p-5 flex flex-col">
+                    <div className="flex justify-between items-center mb-4">
+                        <h2 className="text-white text-lg font-bold">Vânzări {currentYear}</h2>
+                        <div className="text-xs text-slate-400">
+                            Total: <span className="text-primary font-bold">{vanzariFormatted}</span> din <span className="text-white font-bold">{vanzariLunare.reduce((a, v) => a + v.numar, 0)}</span> vânzări
+                        </div>
                     </div>
+                    {/* Grid lines */}
                     <div className="flex-1 w-full relative">
-                        <svg className="w-full h-full" preserveAspectRatio="none" viewBox="0 0 800 300">
-                            <defs>
-                                <linearGradient id="chartGradient" x1="0" x2="0" y1="0" y2="1">
-                                    <stop offset="0%" stopColor="#895af6" stopOpacity="0.5" />
-                                    <stop offset="100%" stopColor="#895af6" stopOpacity="0" />
-                                </linearGradient>
-                            </defs>
-                            {/* Grid Lines */}
-                            <line stroke="#2e3245" strokeWidth="1" x1="0" x2="800" y1="250" y2="250" />
-                            <line stroke="#2e3245" strokeDasharray="4 4" strokeWidth="1" x1="0" x2="800" y1="175" y2="175" />
-                            <line stroke="#2e3245" strokeDasharray="4 4" strokeWidth="1" x1="0" x2="800" y1="100" y2="100" />
-                            <line stroke="#2e3245" strokeDasharray="4 4" strokeWidth="1" x1="0" x2="800" y1="25" y2="25" />
-                            {/* Chart Fill */}
-                            <path d="M0 250 C 100 250, 100 150, 200 180 C 300 210, 300 100, 400 80 C 500 60, 500 150, 600 120 C 700 90, 700 30, 800 50 L 800 300 L 0 300 Z" fill="url(#chartGradient)" />
-                            {/* Chart Line */}
-                            <path d="M0 250 C 100 250, 100 150, 200 180 C 300 210, 300 100, 400 80 C 500 60, 500 150, 600 120 C 700 90, 700 30, 800 50" fill="none" stroke="#895af6" strokeLinecap="round" strokeWidth="3" />
-                        </svg>
-                        <div className="flex justify-between text-xs text-slate-500 mt-2 px-2">
-                            <span>Jan</span><span>Mar</span><span>May</span><span>Jul</span><span>Sep</span><span>Nov</span><span>Dec</span>
+                        <div className="absolute inset-0 flex flex-col justify-between pointer-events-none pr-1" style={{ bottom: '40px' }}>
+                            {[...Array(4)].map((_, i) => (
+                                <div key={i} className="flex items-center gap-2 w-full">
+                                    <span className="text-[9px] text-slate-600 w-8 text-right shrink-0">
+                                        €{((maxVanzare * (4 - i)) / 4 / 1000).toFixed(0)}K
+                                    </span>
+                                    <div className="flex-1 border-b border-white/[0.04]"></div>
+                                </div>
+                            ))}
+                            <div className="flex items-center gap-2 w-full">
+                                <span className="text-[9px] text-slate-600 w-8 text-right shrink-0">€0</span>
+                                <div className="flex-1 border-b border-white/[0.06]"></div>
+                            </div>
+                        </div>
+                        {/* Bars */}
+                        <div className="relative flex items-end gap-2 px-10 pb-1" style={{ height: '300px' }}>
+                            {vanzariLunare.map((v, i) => {
+                                const barH = maxVanzare > 0 ? Math.max(Math.round((v.total / maxVanzare) * 280), 6) : 6;
+                                const currentMonth = new Date().getMonth();
+                                const isCurrentMonth = i === currentMonth;
+                                const hasSales = v.total > 0;
+                                return (
+                                    <div key={i} className="flex-1 flex flex-col items-center justify-end group cursor-default relative" style={{ height: '100%' }}>
+                                        {/* Floating tooltip */}
+                                        {hasSales && (
+                                            <div className="absolute -top-1 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-all duration-300 z-10 pointer-events-none group-hover:-translate-y-2">
+                                                <div className="bg-[#1e1636] border border-primary/30 rounded-lg px-2.5 py-1.5 shadow-xl shadow-primary/10 whitespace-nowrap">
+                                                    <p className="text-[10px] text-white font-bold">€{v.total.toLocaleString()}</p>
+                                                    <p className="text-[8px] text-slate-400">{v.numar} vânzăr{v.numar === 1 ? 'e' : 'i'}</p>
+                                                </div>
+                                                <div className="w-2 h-2 bg-[#1e1636] border-r border-b border-primary/30 rotate-45 mx-auto -mt-1"></div>
+                                            </div>
+                                        )}
+                                        {/* Bar */}
+                                        <div className="flex items-end justify-center w-full">
+                                            <div
+                                                className={`w-[65%] rounded-xl transition-all duration-500 relative overflow-hidden ${isCurrentMonth
+                                                    ? 'shadow-[0_0_20px_rgba(137,90,246,0.4)] group-hover:shadow-[0_0_30px_rgba(137,90,246,0.6)]'
+                                                    : hasSales
+                                                        ? 'group-hover:shadow-[0_0_15px_rgba(137,90,246,0.25)]'
+                                                        : ''
+                                                    }`}
+                                                style={{
+                                                    height: `${barH}px`,
+                                                    background: hasSales
+                                                        ? isCurrentMonth
+                                                            ? 'linear-gradient(to top, #7c3aed, #a78bfa, #c4b5fd)'
+                                                            : 'linear-gradient(to top, #6d28d9, #895af6, #a78bfa)'
+                                                        : 'rgba(255,255,255,0.03)',
+                                                    transform: 'scaleY(1)',
+                                                    transformOrigin: 'bottom',
+                                                }}
+                                            >
+                                                {/* Glass shine effect */}
+                                                {hasSales && (
+                                                    <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/[0.12] to-white/0 group-hover:via-white/20 transition-all duration-500"></div>
+                                                )}
+                                                {/* Top highlight */}
+                                                {hasSales && (
+                                                    <div className="absolute top-0 left-0 right-0 h-[3px] bg-gradient-to-r from-transparent via-white/30 to-transparent rounded-t-xl"></div>
+                                                )}
+                                            </div>
+                                        </div>
+                                        {/* Month label */}
+                                        <span className={`text-[10px] mt-2 font-medium ${isCurrentMonth ? 'text-primary font-bold' : hasSales ? 'text-slate-400' : 'text-slate-600'}`}>
+                                            {monthNames[i]}
+                                        </span>
+                                    </div>
+                                );
+                            })}
                         </div>
                     </div>
                 </div>
 
                 {/* Approvals List (4 cols) */}
-                <div className="lg:col-span-4 glass-panel rounded-xl flex flex-col overflow-hidden">
+                <div className="lg:col-span-4 glass-panel rounded-xl flex flex-col overflow-hidden max-h-[340px]">
                     <div className="p-6 pb-2 border-b border-white/5 flex justify-between items-center">
                         <h3 className="text-white text-lg font-bold">Cereri de Aprobare</h3>
                         <span className="bg-primary/20 text-primary text-xs font-bold px-2 py-0.5 rounded-full">{cereriPendingList.length} Noi</span>
@@ -199,12 +266,12 @@ function DirectorDashboard() {
                         {cereriPendingList.map((item, i) => (
                             <div key={i} className="bg-secondary/30 hover:bg-secondary/60 transition-colors p-3 rounded-lg flex items-center gap-3 border border-transparent hover:border-primary/30">
                                 <div className={`size-12 rounded-lg flex items-center justify-center shrink-0 ${item.type === 'discount' ? 'bg-gradient-to-br from-amber-500/20 to-amber-900/20' :
-                                        item.type === 'tranzactie' ? 'bg-gradient-to-br from-emerald-500/20 to-emerald-900/20' :
-                                            'bg-gradient-to-br from-primary/30 to-purple-900/30'
+                                    item.type === 'tranzactie' ? 'bg-gradient-to-br from-emerald-500/20 to-emerald-900/20' :
+                                        'bg-gradient-to-br from-primary/30 to-purple-900/30'
                                     }`}>
                                     <span className={`material-symbols-outlined text-xl ${item.type === 'discount' ? 'text-amber-400' :
-                                            item.type === 'tranzactie' ? 'text-emerald-400' :
-                                                'text-primary'
+                                        item.type === 'tranzactie' ? 'text-emerald-400' :
+                                            'text-primary'
                                         }`}>{item.icon}</span>
                                 </div>
                                 <div className="flex-1 min-w-0">

@@ -17,8 +17,8 @@ const getAiMatchScores = () => {
 
 const matchColor = (pct) => {
     if (pct >= 75) return { text: 'text-emerald-400', hex: '#34d399', ring: 'ring-emerald-400/40' };
-    if (pct >= 60) return { text: 'text-teal-400',    hex: '#2dd4bf', ring: 'ring-teal-400/40' };
-    if (pct >= 45) return { text: 'text-violet-400',  hex: '#a78bfa', ring: 'ring-violet-400/40' };
+    if (pct >= 60) return { text: 'text-teal-400', hex: '#2dd4bf', ring: 'ring-teal-400/40' };
+    if (pct >= 45) return { text: 'text-violet-400', hex: '#a78bfa', ring: 'ring-violet-400/40' };
     return { text: 'text-slate-400', hex: '#94a3b8', ring: 'ring-slate-400/40' };
 };
 
@@ -35,23 +35,34 @@ function CatalogMasini() {
     const [masini, setMasini] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
-    const [sortBy, setSortBy] = useState(() => getAiMatchScores() ? 'ai' : 'newest');
-    const [paginaCurenta, setPaginaCurenta] = useState(1);
+    const [sortBy, setSortBy] = useState(() => sessionStorage.getItem('catalogSort') || 'newest');
+    const [paginaCurenta, setPaginaCurenta] = useState(() => Number(sessionStorage.getItem('catalogPage')) || 1);
     const [aiScores, setAiScores] = useState(() => getAiMatchScores());
     const hasAiTest = aiScores !== null;
     const [wishlist, setWishlist] = useState(() => {
         try { return JSON.parse(localStorage.getItem('wishlist') || '[]'); } catch { return []; }
     });
+    const [personalDiscounts, setPersonalDiscounts] = useState({});
 
-    // Filtre state
-    const [aiMinScore, setAiMinScore] = useState(0);
-    const [selectedBrands, setSelectedBrands] = useState([]);
-    const [fuelFilter, setFuelFilter] = useState(null);
-    const [selectedCaroserii, setSelectedCaroserii] = useState([]);
+    // Filtre state — persisted in sessionStorage
+    const [selectedBrands, setSelectedBrands] = useState(() => {
+        try { return JSON.parse(sessionStorage.getItem('catalogBrands') || '[]'); } catch { return []; }
+    });
+    const [fuelFilter, setFuelFilter] = useState(() => sessionStorage.getItem('catalogFuel') || null);
+    const [selectedCaroserii, setSelectedCaroserii] = useState(() => {
+        try { return JSON.parse(sessionStorage.getItem('catalogCaroserii') || '[]'); } catch { return []; }
+    });
     const [yearMin, setYearMin] = useState(2000);
     const [yearMax, setYearMax] = useState(2025);
     const [priceMin, setPriceMin] = useState(0);
     const [priceMax, setPriceMax] = useState(200000);
+
+    // Sync filter state to sessionStorage
+    useEffect(() => { sessionStorage.setItem('catalogSort', sortBy); }, [sortBy]);
+    useEffect(() => { sessionStorage.setItem('catalogPage', paginaCurenta); }, [paginaCurenta]);
+    useEffect(() => { sessionStorage.setItem('catalogBrands', JSON.stringify(selectedBrands)); }, [selectedBrands]);
+    useEffect(() => { sessionStorage.setItem('catalogFuel', fuelFilter || ''); }, [fuelFilter]);
+    useEffect(() => { sessionStorage.setItem('catalogCaroserii', JSON.stringify(selectedCaroserii)); }, [selectedCaroserii]);
 
     // Fetch masini from API
     useEffect(() => {
@@ -61,6 +72,25 @@ function CatalogMasini() {
                 const data = await apiGet('/api/masini');
                 const scores = getAiMatchScores();
                 setAiScores(scores);
+
+                // Fetch personal discounts for this client
+                try {
+                    const discounts = await apiGet('/api/discount');
+                    const discountMap = {};
+                    discounts.forEach(d => {
+                        if (d.status === 'Approved' && d.tip === 'Discount' && d.idMasina) {
+                            const masina = data.find(m => m.idMasina === d.idMasina);
+                            if (masina) {
+                                discountMap[d.idMasina] = {
+                                    procent: d.discountProcent,
+                                    pretPersonal: Math.round(masina.pretEuro * (1 - d.discountProcent / 100)),
+                                };
+                            }
+                        }
+                    });
+                    setPersonalDiscounts(discountMap);
+                } catch { /* Client may not have discounts */ }
+
                 const enriched = data.map(m => ({
                     ...m,
                     aiMatch: scores ? (scores[m.idMasina] ?? null) : null,
@@ -127,7 +157,6 @@ function CatalogMasini() {
     };
 
     const resetFilters = () => {
-        setAiMinScore(0);
         setSelectedBrands([]);
         setFuelFilter(null);
         setSelectedCaroserii([]);
@@ -143,7 +172,7 @@ function CatalogMasini() {
         if (selectedBrands.length > 0 && !selectedBrands.includes(m.marca)) return false;
         if (selectedCaroserii.length > 0 && !selectedCaroserii.includes(m.categorieAuto)) return false;
         if (fuelFilter && combustibilMap[m.combustibil] !== fuelFilter) return false;
-        if (hasAiTest && aiMinScore > 0 && (m.aiMatch === null || m.aiMatch < aiMinScore)) return false;
+
         if (m.anFabricatie < yearMin || m.anFabricatie > yearMax) return false;
         if (pret < priceMin || pret > priceMax) return false;
         return true;
@@ -162,7 +191,16 @@ function CatalogMasini() {
     const totalPages = Math.ceil(sortedMasini.length / ITEMS_PER_PAGE);
     const paginatedMasini = sortedMasini.slice((paginaCurenta - 1) * ITEMS_PER_PAGE, paginaCurenta * ITEMS_PER_PAGE);
 
-    const recentViewed = masini.filter(m => m.status !== 'Vândut').slice(0, 5);
+    // Recently viewed: read IDs from localStorage, map to actual car objects
+    const recentViewed = (() => {
+        try {
+            const ids = JSON.parse(localStorage.getItem('recentlyViewedCars') || '[]');
+            return ids
+                .map(id => masini.find(m => m.idMasina === id))
+                .filter(m => m && m.status !== 'Vândut')
+                .slice(0, 8);
+        } catch { return []; }
+    })();
 
     // Slider percentages
     const yearMinPct = ABS_MAX_YEAR > ABS_MIN_YEAR ? ((yearMin - ABS_MIN_YEAR) / (ABS_MAX_YEAR - ABS_MIN_YEAR)) * 100 : 0;
@@ -202,56 +240,18 @@ function CatalogMasini() {
                     <button onClick={resetFilters} className="text-xs font-medium text-[#895af6] hover:text-white transition-colors">Resetează</button>
                 </div>
 
-                {/* AI Match Score */}
-                <div className="glass-panel p-5 rounded-2xl space-y-4 border-t-2 border-t-[#2DD4BF]/50 relative overflow-hidden">
-                    <div className="absolute top-0 right-0 -mt-4 -mr-4 w-24 h-24 bg-[#2DD4BF]/10 rounded-full blur-xl pointer-events-none"></div>
-                    <div className="flex justify-between items-center z-10 relative">
-                        <div className="flex items-center gap-2">
-                            <span className="material-symbols-outlined text-[#2DD4BF] text-xl">smart_toy</span>
-                            <span className="text-sm font-semibold text-white">AI Match Score</span>
-                        </div>
-                        {hasAiTest && <span className="text-xs font-bold bg-[#2DD4BF]/20 text-[#2DD4BF] px-2 py-1 rounded-md">&gt; {aiMinScore}%</span>}
-                    </div>
-                    {hasAiTest ? (
-                        <>
-                            <p className="text-xs text-gray-400">Procentele sunt calculate pe baza testului tău AI.</p>
-                            <div className="relative h-2 bg-white/10 rounded-full mt-2">
-                                <div className="absolute h-full bg-gradient-to-r from-teal-500 to-[#2DD4BF] rounded-full" style={{ width: `${aiMinScore}%` }}></div>
-                                <input
-                                    type="range" min="0" max="100" value={aiMinScore}
-                                    onChange={e => setAiMinScore(parseInt(e.target.value))}
-                                    className="absolute inset-0 w-full opacity-0 cursor-pointer"
-                                />
-                                <div className="absolute size-4 bg-white border-2 border-[#2DD4BF] rounded-full -top-1 shadow-[0_0_10px_rgba(45,212,191,0.5)] pointer-events-none" style={{ left: `${aiMinScore}%`, transform: 'translateX(-50%)' }}></div>
-                            </div>
-                        </>
-                    ) : (
-                        <div className="space-y-3">
-                            <p className="text-xs text-gray-400">Completează testul AI din secțiunea <strong className="text-[#2DD4BF]">Recomandare AI</strong> pentru a vedea cât de bine se potrivește fiecare mașină cu preferințele tale.</p>
-                            <button
-                                onClick={() => navigate('/client/recomandare-ai')}
-                                className="w-full py-2 rounded-lg bg-[#2DD4BF]/10 border border-[#2DD4BF]/20 text-[#2DD4BF] text-xs font-bold hover:bg-[#2DD4BF]/20 transition flex items-center justify-center gap-2"
-                            >
-                                <span className="material-symbols-outlined text-[16px]">auto_awesome</span>
-                                Fă Testul AI
-                            </button>
-                        </div>
-                    )}
-                </div>
-
                 {/* Brand */}
                 <div className="glass-panel p-5 rounded-2xl">
                     <h3 className="text-sm font-semibold text-gray-300 mb-3 uppercase tracking-wider">Brand</h3>
-                    <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
+                    <div className="flex flex-wrap gap-2">
                         {allBrands.map(brand => (
                             <button
                                 key={brand}
                                 onClick={() => toggleBrand(brand)}
-                                className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all whitespace-nowrap shrink-0 ${
-                                    selectedBrands.includes(brand)
-                                        ? 'bg-[#895af6] text-white border-[#895af6] shadow-[0_0_10px_rgba(137,90,246,0.3)]'
-                                        : 'bg-white/5 text-gray-400 border-white/10 hover:border-white/30 hover:text-white'
-                                }`}
+                                className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all whitespace-nowrap shrink-0 ${selectedBrands.includes(brand)
+                                    ? 'bg-[#895af6] text-white border-[#895af6] shadow-[0_0_10px_rgba(137,90,246,0.3)]'
+                                    : 'bg-white/5 text-gray-400 border-white/10 hover:border-white/30 hover:text-white'
+                                    }`}
                             >
                                 {brand}
                             </button>
@@ -406,7 +406,11 @@ function CatalogMasini() {
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
                     {paginatedMasini.map(masina => {
                         const isVandut = masina.status === 'Vândut';
-                        const pretAfisat = masina.esteInPromotie && masina.pretPromotional ? masina.pretPromotional : masina.pretEuro;
+                        const pd = personalDiscounts[masina.idMasina];
+                        const pretAfisat = pd ? pd.pretPersonal
+                            : (masina.esteInPromotie && masina.pretPromotional ? masina.pretPromotional : masina.pretEuro);
+                        const arePromotie = masina.esteInPromotie && masina.pretPromotional;
+                        const areDiscountPersonal = !!pd;
                         const mc = masina.aiMatch != null ? matchColor(masina.aiMatch) : null;
                         const aiColor = mc ? mc.hex : '#64748b';
                         const aiText = masina.aiMatch != null ? `${masina.aiMatch}%` : '—';
@@ -414,8 +418,9 @@ function CatalogMasini() {
                         return (
                             <div
                                 key={masina.idMasina}
-                                className={`group relative glass-panel rounded-2xl overflow-hidden transition-all duration-300 flex flex-col ${isVandut
-                                    ? 'grayscale opacity-70 hover:opacity-100 hover:grayscale-0'
+                                onClick={() => !isVandut && navigate(`/client/masina/${masina.idMasina}`)}
+                                className={`group relative glass-panel rounded-2xl overflow-hidden transition-all duration-300 flex flex-col cursor-pointer ${isVandut
+                                    ? 'grayscale opacity-70 hover:opacity-100 hover:grayscale-0 cursor-not-allowed'
                                     : 'hover:border-[#895af6]/50 hover:shadow-[0_0_30px_rgba(137,90,246,0.1)]'
                                     }`}
                             >
@@ -430,8 +435,12 @@ function CatalogMasini() {
 
                                     {/* Status Badge */}
                                     <div className="absolute top-4 left-4 z-20 flex gap-2">
-                                        {isVandut ? (
+                                        {masina.status === 'Vandut' || masina.status === 'Vândut' ? (
                                             <span className="px-2.5 py-1 bg-gray-500/90 backdrop-blur-sm text-white text-[10px] font-bold uppercase tracking-wider rounded-md shadow-lg">Vândut</span>
+                                        ) : masina.status === 'Rezervat' ? (
+                                            <span className="px-2.5 py-1 bg-amber-500/90 backdrop-blur-sm text-[#151022] text-[10px] font-bold uppercase tracking-wider rounded-md shadow-lg">Rezervat</span>
+                                        ) : masina.status === 'În service' ? (
+                                            <span className="px-2.5 py-1 bg-blue-500/90 backdrop-blur-sm text-white text-[10px] font-bold uppercase tracking-wider rounded-md shadow-lg">Service</span>
                                         ) : (
                                             <span className="px-2.5 py-1 bg-green-500/90 backdrop-blur-sm text-[#151022] text-[10px] font-bold uppercase tracking-wider rounded-md shadow-lg">Disponibil</span>
                                         )}
@@ -445,23 +454,26 @@ function CatalogMasini() {
                                         <div className="absolute top-4 right-4 z-20">
                                             <button
                                                 onClick={(e) => { e.stopPropagation(); toggleWishlist(masina.idMasina); }}
-                                                className={`relative flex items-center justify-center size-10 backdrop-blur-md rounded-full border transition-all duration-300 ${
-                                                    wishlist.includes(masina.idMasina)
-                                                        ? 'bg-red-500/20 border-red-400/30 shadow-[0_0_12px_rgba(239,68,68,0.3)]'
-                                                        : 'bg-black/60 border-white/10 hover:bg-black/80'
-                                                }`}
+                                                className={`relative flex items-center justify-center size-10 backdrop-blur-md rounded-full border transition-all duration-300 ${wishlist.includes(masina.idMasina)
+                                                    ? 'bg-red-500/20 border-red-400/30 shadow-[0_0_12px_rgba(239,68,68,0.3)]'
+                                                    : 'bg-black/60 border-white/10 hover:bg-black/80'
+                                                    }`}
                                             >
-                                                <span className={`material-symbols-outlined text-lg transition-colors duration-300 ${
-                                                    wishlist.includes(masina.idMasina) ? 'text-red-400' : 'text-white'
-                                                }`}>
+                                                <span className={`material-symbols-outlined text-lg transition-colors duration-300 ${wishlist.includes(masina.idMasina) ? 'text-red-400' : 'text-white'
+                                                    }`}>
                                                     {wishlist.includes(masina.idMasina) ? 'favorite' : 'favorite_border'}
                                                 </span>
                                             </button>
                                         </div>
                                     )}
 
-                                    {/* Promo Ribbon */}
-                                    {masina.esteInPromotie && !isVandut && (
+                                    {/* Promo / Discount Ribbon */}
+                                    {areDiscountPersonal && !isVandut && (
+                                        <div className="absolute -right-8 top-6 z-20 rotate-45 bg-amber-500 py-1 px-10 shadow-lg text-[10px] font-bold text-[#151022] tracking-widest border border-white/20">
+                                            -{pd.procent}%
+                                        </div>
+                                    )}
+                                    {arePromotie && !areDiscountPersonal && !isVandut && (
                                         <div className="absolute -right-8 top-6 z-20 rotate-45 bg-[#895af6] py-1 px-10 shadow-lg text-[10px] font-bold text-white tracking-widest border border-white/20">
                                             PROMO
                                         </div>
@@ -503,8 +515,11 @@ function CatalogMasini() {
                                         ) : (
                                             <>
                                                 <span className="text-2xl font-bold text-[#D4AF37]">€{pretAfisat.toLocaleString()}</span>
-                                                {masina.esteInPromotie && masina.pretPromotional && (
+                                                {(arePromotie || areDiscountPersonal) && (
                                                     <span className="text-sm text-gray-500 line-through mb-1.5">€{masina.pretEuro.toLocaleString()}</span>
+                                                )}
+                                                {areDiscountPersonal && (
+                                                    <span className="text-[10px] font-bold text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded mb-1.5">Discount personal</span>
                                                 )}
                                             </>
                                         )}
@@ -544,57 +559,57 @@ function CatalogMasini() {
 
                 {/* Pagination */}
                 {totalPages > 1 && (
-                <div className="flex items-center justify-center gap-4 mt-12 mb-8">
-                    <button
-                        onClick={() => setPaginaCurenta(p => Math.max(1, p - 1))}
-                        disabled={paginaCurenta === 1}
-                        className="p-2 rounded-lg text-gray-400 hover:text-white hover:bg-white/5 transition-all disabled:opacity-30"
-                    >
-                        <span className="material-symbols-outlined">chevron_left</span>
-                    </button>
-                    <div className="flex items-center gap-2">
-                        {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
-                            let page;
-                            if (totalPages <= 5) { page = i + 1; }
-                            else if (paginaCurenta <= 3) { page = i + 1; }
-                            else if (paginaCurenta >= totalPages - 2) { page = totalPages - 4 + i; }
-                            else { page = paginaCurenta - 2 + i; }
-                            return (
-                                <button
-                                    key={page}
-                                    onClick={() => setPaginaCurenta(page)}
-                                    className={`size-9 rounded-lg font-medium transition-all ${paginaCurenta === page
-                                        ? 'bg-[#895af6] text-white font-bold shadow-lg shadow-[#895af6]/20'
-                                        : 'text-gray-400 hover:bg-white/5 hover:text-white'
-                                    }`}
-                                >
-                                    {page}
-                                </button>
-                            );
-                        })}
-                        {totalPages > 5 && paginaCurenta < totalPages - 2 && (
-                            <>
-                                <span className="text-gray-500">...</span>
-                                <button
-                                    onClick={() => setPaginaCurenta(totalPages)}
-                                    className={`size-9 rounded-lg font-medium transition-all ${paginaCurenta === totalPages
-                                        ? 'bg-[#895af6] text-white font-bold shadow-lg shadow-[#895af6]/20'
-                                        : 'text-gray-400 hover:bg-white/5 hover:text-white'
-                                    }`}
-                                >
-                                    {totalPages}
-                                </button>
-                            </>
-                        )}
+                    <div className="flex items-center justify-center gap-4 mt-12 mb-8">
+                        <button
+                            onClick={() => setPaginaCurenta(p => Math.max(1, p - 1))}
+                            disabled={paginaCurenta === 1}
+                            className="p-2 rounded-lg text-gray-400 hover:text-white hover:bg-white/5 transition-all disabled:opacity-30"
+                        >
+                            <span className="material-symbols-outlined">chevron_left</span>
+                        </button>
+                        <div className="flex items-center gap-2">
+                            {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
+                                let page;
+                                if (totalPages <= 5) { page = i + 1; }
+                                else if (paginaCurenta <= 3) { page = i + 1; }
+                                else if (paginaCurenta >= totalPages - 2) { page = totalPages - 4 + i; }
+                                else { page = paginaCurenta - 2 + i; }
+                                return (
+                                    <button
+                                        key={page}
+                                        onClick={() => setPaginaCurenta(page)}
+                                        className={`size-9 rounded-lg font-medium transition-all ${paginaCurenta === page
+                                            ? 'bg-[#895af6] text-white font-bold shadow-lg shadow-[#895af6]/20'
+                                            : 'text-gray-400 hover:bg-white/5 hover:text-white'
+                                            }`}
+                                    >
+                                        {page}
+                                    </button>
+                                );
+                            })}
+                            {totalPages > 5 && paginaCurenta < totalPages - 2 && (
+                                <>
+                                    <span className="text-gray-500">...</span>
+                                    <button
+                                        onClick={() => setPaginaCurenta(totalPages)}
+                                        className={`size-9 rounded-lg font-medium transition-all ${paginaCurenta === totalPages
+                                            ? 'bg-[#895af6] text-white font-bold shadow-lg shadow-[#895af6]/20'
+                                            : 'text-gray-400 hover:bg-white/5 hover:text-white'
+                                            }`}
+                                    >
+                                        {totalPages}
+                                    </button>
+                                </>
+                            )}
+                        </div>
+                        <button
+                            onClick={() => setPaginaCurenta(p => Math.min(totalPages, p + 1))}
+                            disabled={paginaCurenta === totalPages}
+                            className="p-2 rounded-lg text-gray-400 hover:text-white hover:bg-white/5 transition-all disabled:opacity-30"
+                        >
+                            <span className="material-symbols-outlined">chevron_right</span>
+                        </button>
                     </div>
-                    <button
-                        onClick={() => setPaginaCurenta(p => Math.min(totalPages, p + 1))}
-                        disabled={paginaCurenta === totalPages}
-                        className="p-2 rounded-lg text-gray-400 hover:text-white hover:bg-white/5 transition-all disabled:opacity-30"
-                    >
-                        <span className="material-symbols-outlined">chevron_right</span>
-                    </button>
-                </div>
                 )}
 
                 {/* Vehicule Vizualizate Recent */}
@@ -611,7 +626,7 @@ function CatalogMasini() {
                         </div>
                     </div>
                     <div className="flex gap-3 overflow-x-auto pb-2 snap-x snap-mandatory scrollbar-hide">
-                        {recentViewed.map(masina => (
+                        {recentViewed.length > 0 ? recentViewed.map(masina => (
                             <div
                                 key={masina.idMasina}
                                 onClick={() => navigate(`/client/masina/${masina.idMasina}`)}
@@ -635,7 +650,12 @@ function CatalogMasini() {
                                     </div>
                                 </div>
                             </div>
-                        ))}
+                        )) : (
+                            <div className="flex items-center gap-3 py-4 px-2 text-gray-500 text-sm">
+                                <span className="material-symbols-outlined text-lg">visibility_off</span>
+                                <span>Nu ai vizualizat încă nicio mașină. Deschide o mașină din catalog pentru a o vedea aici.</span>
+                            </div>
+                        )}
                     </div>
                 </section>
             </main>

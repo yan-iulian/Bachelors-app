@@ -29,3 +29,14 @@ export const apiGet = (endpoint) => apiFetch(endpoint)
 export const apiPost = (endpoint, body) => apiFetch(endpoint, { method: 'POST', body: JSON.stringify(body) })
 export const apiPut = (endpoint, body) => apiFetch(endpoint, { method: 'PUT', body: JSON.stringify(body) })
 export const apiDelete = (endpoint) => apiFetch(endpoint, { method: 'DELETE' })
+
+export const apiUpload = async (endpoint, formData) => {
+    const res = await fetch(`${API_URL}${endpoint}`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` },
+        body: formData
+    })
+    const data = await res.json()
+    if (!res.ok) throw new Error(data.error || 'Eroare la upload')
+    return data
+}

@@ -7,6 +7,7 @@ import createTestDriveModel from './testdrive.js'
 import createReparatieModel from './reparatie.js'
 import createPiesaModel from './piesa.js'
 import createAuditLogModel from './auditlog.js'
+import createImagineMasinaModel from './imaginemasina.js'
 
 const sequelize = new Sequelize(
     process.env.DB_NAME,
@@ -28,6 +29,7 @@ const TestDrive = createTestDriveModel(sequelize)
 const Reparatie = createReparatieModel(sequelize)
 const Piesa = createPiesaModel(sequelize)
 const AuditLog = createAuditLogModel(sequelize)
+const ImagineMasina = createImagineMasinaModel(sequelize)
 
 // Tabela de jonctiune Piesa_Reparatie (N:M)
 const PiesaReparatie = sequelize.define('PiesaReparatie', {}, {
@@ -81,6 +83,10 @@ Reparatie.belongsToMany(Piesa, { through: PiesaReparatie, foreignKey: 'idReparat
 Utilizator.hasMany(AuditLog, { foreignKey: 'idUtilizator', as: 'auditLogs' })
 AuditLog.belongsTo(Utilizator, { foreignKey: 'idUtilizator', as: 'utilizator' })
 
+// Masina are imagini (1:N)
+Masina.hasMany(ImagineMasina, { foreignKey: 'idMasina', as: 'imagini' })
+ImagineMasina.belongsTo(Masina, { foreignKey: 'idMasina' })
+
 // Sincronizare DB
 try {
     await sequelize.sync({ alter: true })
@@ -98,5 +104,6 @@ export default {
     Reparatie,
     Piesa,
     PiesaReparatie,
-    AuditLog
+    AuditLog,
+    ImagineMasina
 }

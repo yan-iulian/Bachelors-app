@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { apiGet, apiPost, apiPut, apiDelete } from '../../config/apiHelper';
+import { apiGet, apiPost, apiPut, apiDelete, apiUpload } from '../../config/apiHelper';
+import API_URL from '../../config/api';
 
 const combustibilMap = { 0: 'Benzină', 1: 'Diesel', 2: 'Electric', 3: 'Hibrid' };
 const categorieMap = { 0: 'Sedan', 1: 'Hatchback', 2: 'Coupe', 3: 'Break', 4: 'SUV', 5: 'Cabrio', 6: 'Combi' };
@@ -11,8 +12,8 @@ const statusColors = {
 };
 
 const emptyMasina = {
-    marca: '', model: '', anFabricatie: 2024, km: 0, combustibil: 0,
-    pretEuro: 0, status: 'Disponibil', categorieAuto: 0, locParcare: '',
+    marca: '', model: '', anFabricatie: 2024, km: '', combustibil: 0,
+    pretEuro: '', status: 'Disponibil', categorieAuto: 0, locParcare: '',
     esteInPromotie: false, pretPromotional: null
 };
 
@@ -25,6 +26,10 @@ function GestiuneMasini() {
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(null);
     const [editingMasina, setEditingMasina] = useState(null);
     const [formData, setFormData] = useState(emptyMasina);
+    const [carImages, setCarImages] = useState([]);
+    const [uploading, setUploading] = useState(false);
+    const [pendingFiles, setPendingFiles] = useState([]);
+    const [pendingHeroIdx, setPendingHeroIdx] = useState(0);
 
     const fetchMasini = async () => {
         try {
@@ -46,25 +51,90 @@ function GestiuneMasini() {
     const handleOpenAdd = () => {
         setEditingMasina(null);
         setFormData(emptyMasina);
+        setCarImages([]);
+        setPendingFiles([]);
+        setPendingHeroIdx(0);
         setShowModal(true);
     };
 
     const handleOpenEdit = (masina) => {
         setEditingMasina(masina);
         setFormData({ ...masina });
+        setCarImages(masina.imagini || []);
+        setPendingFiles([]);
+        setPendingHeroIdx(0);
         setShowModal(true);
     };
 
     const handleSave = async () => {
         try {
+            // Sanitize numeric fields
+            const data = {
+                ...formData,
+                km: formData.km === '' ? 0 : Number(formData.km),
+                pretEuro: formData.pretEuro === '' ? 0 : Number(formData.pretEuro),
+                pretPromotional: formData.pretPromotional ? Number(formData.pretPromotional) : null,
+                anFabricatie: Number(formData.anFabricatie),
+                combustibil: Number(formData.combustibil),
+                categorieAuto: Number(formData.categorieAuto),
+            };
+
+            let carId;
             if (editingMasina) {
-                await apiPut(`/api/masini/${editingMasina.idMasina}`, formData);
+                await apiPut(`/api/masini/${editingMasina.idMasina}`, data);
+                carId = editingMasina.idMasina;
             } else {
-                await apiPost('/api/masini', formData);
+                const newCar = await apiPost('/api/masini', data);
+                carId = newCar.idMasina;
+            }
+            // Upload pending files if any
+            if (pendingFiles.length > 0 && carId) {
+                const fd = new FormData();
+                pendingFiles.forEach(f => fd.append('imagini', f));
+                const uploadedImgs = await apiUpload(`/api/masini/${carId}/imagini`, fd);
+                // Set hero image if user selected one
+                if (uploadedImgs && uploadedImgs[pendingHeroIdx]) {
+                    await apiPut(`/api/masini/${carId}/imagini/${uploadedImgs[pendingHeroIdx].idImagine}/hero`, {});
+                }
             }
             await fetchMasini();
-        } catch (e) { console.error('Eroare la salvare:', e); }
-        setShowModal(false);
+            setPendingFiles([]);
+            setShowModal(false);
+        } catch (e) {
+            console.error('Eroare la salvare:', e);
+            alert('Eroare: ' + (e.message || 'Nu s-a putut salva mașina'));
+        }
+    };
+
+    const handleUploadImages = async (files) => {
+        if (!editingMasina || files.length === 0) return;
+        setUploading(true);
+        try {
+            const fd = new FormData();
+            Array.from(files).forEach(f => fd.append('imagini', f));
+            const newImgs = await apiUpload(`/api/masini/${editingMasina.idMasina}/imagini`, fd);
+            setCarImages(prev => [...prev, ...newImgs]);
+            await fetchMasini();
+        } catch (e) { console.error('Eroare upload:', e); }
+        finally { setUploading(false); }
+    };
+
+    const handleDeleteImage = async (idImg) => {
+        if (!editingMasina) return;
+        try {
+            await apiDelete(`/api/masini/${editingMasina.idMasina}/imagini/${idImg}`);
+            setCarImages(prev => prev.filter(i => i.idImagine !== idImg));
+            await fetchMasini();
+        } catch (e) { console.error('Eroare ștergere imagine:', e); }
+    };
+
+    const handleSetHero = async (idImg) => {
+        if (!editingMasina) return;
+        try {
+            await apiPut(`/api/masini/${editingMasina.idMasina}/imagini/${idImg}/hero`, {});
+            setCarImages(prev => prev.map(i => ({ ...i, esteHero: i.idImagine === idImg })));
+            await fetchMasini();
+        } catch (e) { console.error('Eroare setare hero:', e); }
     };
 
     const handleDelete = async (id) => {
@@ -138,7 +208,7 @@ function GestiuneMasini() {
                             className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${filterStatus === s
                                 ? 'bg-primary/20 text-primary border border-primary/30'
                                 : 'bg-white/5 text-slate-400 border border-white/10 hover:bg-white/10'
-                            }`}
+                                }`}
                         >
                             {s}
                         </button>
@@ -235,8 +305,8 @@ function GestiuneMasini() {
             {/* Modal Adaugă/Editează */}
             {showModal && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-                    <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowModal(false)} />
-                    <div className="relative glass-panel rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 space-y-5 border border-white/10">
+                    <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={e => { if (e.target === e.currentTarget) setShowModal(false); }} />
+                    <div onClick={e => e.stopPropagation()} className="relative glass-panel rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 space-y-5 border border-white/10">
                         <div className="flex justify-between items-center">
                             <h2 className="text-xl font-bold text-white">
                                 {editingMasina ? 'Editează Mașină' : 'Adaugă Mașină Nouă'}
@@ -271,7 +341,7 @@ function GestiuneMasini() {
                             {/* Kilometraj */}
                             <div>
                                 <label className="block text-sm font-medium text-slate-300 mb-1.5">Kilometraj {editingMasina && <span className="text-slate-500 text-xs ml-1">(needitabil)</span>}</label>
-                                <input type="number" value={formData.km} onChange={e => setFormData({ ...formData, km: parseInt(e.target.value) || 0 })}
+                                <input type="number" value={formData.km} onChange={e => setFormData({ ...formData, km: e.target.value === '' ? '' : parseInt(e.target.value) })}
                                     disabled={!!editingMasina}
                                     className={`w-full bg-white/5 border border-white/10 text-white rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary ${editingMasina ? 'opacity-50 cursor-not-allowed' : ''}`} />
                             </div>
@@ -296,7 +366,7 @@ function GestiuneMasini() {
                             {/* Pret */}
                             <div>
                                 <label className="block text-sm font-medium text-slate-300 mb-1.5">Preț (€)</label>
-                                <input type="number" value={formData.pretEuro} onChange={e => setFormData({ ...formData, pretEuro: parseFloat(e.target.value) || 0 })}
+                                <input type="number" value={formData.pretEuro} onChange={e => setFormData({ ...formData, pretEuro: e.target.value === '' ? '' : parseFloat(e.target.value) })}
                                     className="w-full bg-white/5 border border-white/10 text-white rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary" />
                             </div>
                             {/* Loc Parcare */}
@@ -304,14 +374,6 @@ function GestiuneMasini() {
                                 <label className="block text-sm font-medium text-slate-300 mb-1.5">Loc Parcare</label>
                                 <input type="text" value={formData.locParcare} onChange={e => setFormData({ ...formData, locParcare: e.target.value })}
                                     className="w-full bg-white/5 border border-white/10 text-white rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary" placeholder="ex: A-01" />
-                            </div>
-                            {/* Status */}
-                            <div>
-                                <label className="block text-sm font-medium text-slate-300 mb-1.5">Status</label>
-                                <select value={formData.status} onChange={e => setFormData({ ...formData, status: e.target.value })}
-                                    className="w-full bg-white/5 border border-white/10 text-white rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary">
-                                    {['Disponibil', 'Rezervat', 'Vandut', 'În service'].map(s => <option key={s} value={s} className="bg-[#1e2030]">{s}</option>)}
-                                </select>
                             </div>
                             {/* Promotie */}
                             <div className="flex flex-col justify-end">
@@ -326,6 +388,90 @@ function GestiuneMasini() {
                                         className="mt-2 w-full bg-white/5 border border-white/10 text-white rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
                                         placeholder="Preț promoțional (€)" />
                                 )}
+                            </div>
+                        </div>
+
+                        {/* Imagini */}
+                        <div className="space-y-3">
+                            <label className="block text-sm font-medium text-slate-300">Imagini</label>
+
+                            {/* Existing images grid (edit mode) */}
+                            {editingMasina && carImages.length > 0 && (
+                                <div className="grid grid-cols-4 gap-2">
+                                    {carImages.map(img => (
+                                        <div key={img.idImagine} className={`relative group rounded-lg overflow-hidden border-2 transition-colors ${img.esteHero ? 'border-[#895af6]' : 'border-white/10'
+                                            }`}>
+                                            <img src={`${API_URL}${img.caleFisier}`} alt="" className="w-full h-20 object-cover" />
+                                            {img.esteHero && (
+                                                <span className="absolute top-1 left-1 bg-[#895af6] text-white text-[8px] font-bold px-1.5 py-0.5 rounded">HERO</span>
+                                            )}
+                                            <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1">
+                                                {!img.esteHero && (
+                                                    <button onClick={() => handleSetHero(img.idImagine)} className="p-1 bg-[#895af6] rounded text-white" title="Setează ca principală">
+                                                        <span className="material-symbols-outlined text-sm">star</span>
+                                                    </button>
+                                                )}
+                                                <button onClick={() => handleDeleteImage(img.idImagine)} className="p-1 bg-rose-500 rounded text-white" title="Șterge">
+                                                    <span className="material-symbols-outlined text-sm">close</span>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+
+                            {/* Preview pending files */}
+                            {pendingFiles.length > 0 && (
+                                <div className="grid grid-cols-4 gap-2">
+                                    {pendingFiles.map((file, i) => (
+                                        <div key={i} className={`relative group rounded-lg overflow-hidden border-2 transition-colors ${pendingHeroIdx === i ? 'border-[#895af6]' : 'border-emerald-500/30'
+                                            }`}>
+                                            <img src={URL.createObjectURL(file)} alt="" className="w-full h-20 object-cover" />
+                                            {pendingHeroIdx === i && (
+                                                <span className="absolute top-1 left-1 bg-[#895af6] text-white text-[8px] font-bold px-1.5 py-0.5 rounded">HERO</span>
+                                            )}
+                                            <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1">
+                                                {pendingHeroIdx !== i && (
+                                                    <button type="button" onClick={() => setPendingHeroIdx(i)} className="p-1 bg-[#895af6] rounded text-white" title="Setează ca principală">
+                                                        <span className="material-symbols-outlined text-sm">star</span>
+                                                    </button>
+                                                )}
+                                                <button type="button" onClick={() => {
+                                                    setPendingFiles(prev => prev.filter((_, j) => j !== i));
+                                                    if (pendingHeroIdx >= pendingFiles.length - 1) setPendingHeroIdx(0);
+                                                }} className="p-1 bg-rose-500 rounded text-white" title="Elimină">
+                                                    <span className="material-symbols-outlined text-sm">close</span>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+
+                            {/* Upload area */}
+                            <div className="relative">
+                                <input
+                                    id="car-image-input"
+                                    type="file"
+                                    multiple
+                                    accept="image/jpeg,image/png,image/webp"
+                                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                                    onChange={e => {
+                                        const files = e.target.files;
+                                        if (!files || files.length === 0) return;
+                                        const fileArray = Array.from(files);
+                                        e.target.value = '';
+                                        if (editingMasina) {
+                                            handleUploadImages(fileArray);
+                                        } else {
+                                            setPendingFiles(prev => [...prev, ...fileArray]);
+                                        }
+                                    }}
+                                />
+                                <div className="flex items-center justify-center gap-2 p-4 rounded-lg border-2 border-dashed border-white/20 text-slate-400 pointer-events-none">
+                                    <span className="material-symbols-outlined">cloud_upload</span>
+                                    <span className="text-sm">{uploading ? 'Se încarcă...' : 'Adaugă imagini (JPG, PNG, WebP)'}</span>
+                                </div>
                             </div>
                         </div>
 

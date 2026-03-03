@@ -5,9 +5,9 @@ const combustibilMap = { 0: 'Benzină', 1: 'Diesel', 2: 'Electric', 3: 'Hibrid' 
 const categorieMap = { 0: 'Sedan', 1: 'Hatchback', 2: 'Coupe', 3: 'Break', 4: 'SUV', 5: 'Cabrio', 6: 'Combi' };
 
 const prioStyle = {
-    HIGH:   { bg: 'bg-red-500/10',   text: 'text-red-400',   border: 'border-red-500/20',   label: 'URGENT' },
+    HIGH: { bg: 'bg-red-500/10', text: 'text-red-400', border: 'border-red-500/20', label: 'URGENT' },
     MEDIUM: { bg: 'bg-amber-500/10', text: 'text-amber-400', border: 'border-amber-500/20', label: 'MEDIU' },
-    LOW:    { bg: 'bg-slate-500/10', text: 'text-slate-400', border: 'border-slate-500/20', label: 'SCĂZUT' },
+    LOW: { bg: 'bg-slate-500/10', text: 'text-slate-400', border: 'border-slate-500/20', label: 'SCĂZUT' },
 };
 
 function EstimariReparatii() {
@@ -31,7 +31,17 @@ function EstimariReparatii() {
                     categorieAuto: categorieMap[r.Masina.categorieAuto] || 'Sedan',
                 } : { marca: '—', model: '—', nrInmatriculare: 'N/A', anFabricatie: 0, km: 0, combustibil: '—', categorieAuto: '—' },
                 mecanic: r.mecanic ? `${r.mecanic.nume} ${r.mecanic.prenume}` : '—',
-                prioritate: 'MEDIUM',
+                prioritate: (() => {
+                    const cost = r.cost || 0;
+                    const achizitie = r.Masina?.pretEuro || 0;
+                    const vanzareEst = Math.round(achizitie * 1.25);
+                    const investitie = achizitie + cost;
+                    const roi = investitie > 0 ? ((vanzareEst - investitie) / investitie) * 100 : 0;
+                    const costRatio = achizitie > 0 ? (cost / achizitie) * 100 : 0;
+                    if (roi < 0 || costRatio > 30) return 'HIGH';
+                    if (roi > 15 && costRatio < 20) return 'LOW';
+                    return 'MEDIUM';
+                })(),
                 descriereProblema: r.descriereProblema || '',
                 pretAchizitie: r.Masina?.pretEuro || 0,
                 pretVanzareEstimat: Math.round((r.Masina?.pretEuro || 0) * 1.25),
@@ -278,7 +288,7 @@ function EstimariReparatii() {
                                             <span className={`text-[10px] font-bold px-2 py-1 rounded-full border ${est.statusDecizie === 'aprobat'
                                                 ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
                                                 : 'bg-red-500/10 text-red-400 border-red-500/20'
-                                            }`}>
+                                                }`}>
                                                 {est.statusDecizie === 'aprobat' ? '✓ Aprobată' : '✕ Anulată'}
                                             </span>
                                         </td>
@@ -379,13 +389,16 @@ function EstimariReparatii() {
                                     <span className="material-symbols-outlined text-slate-400 text-2xl mb-1">storefront</span>
                                     <p className="text-[10px] text-slate-500 uppercase mb-1">Preț Vânzare Est.</p>
                                     {detailEst.statusDecizie === null ? (
-                                        <input
-                                            type="number"
-                                            value={pretVanzareEdit[detailEst.id] ?? detailEst.pretVanzareEstimat}
-                                            onChange={e => setPretVanzareEdit(p => ({ ...p, [detailEst.id]: Number(e.target.value) }))}
-                                            onClick={e => e.stopPropagation()}
-                                            className="w-full text-xl font-bold text-white font-mono text-center bg-transparent border-b border-white/20 focus:border-[#895af6] outline-none py-1"
-                                        />
+                                        <div className="flex items-center justify-center gap-1">
+                                            <input
+                                                type="number"
+                                                value={pretVanzareEdit[detailEst.id] ?? detailEst.pretVanzareEstimat}
+                                                onChange={e => setPretVanzareEdit(p => ({ ...p, [detailEst.id]: Number(e.target.value) }))}
+                                                onClick={e => e.stopPropagation()}
+                                                className="w-28 text-xl font-bold text-white font-mono text-right bg-transparent border-b border-white/20 focus:border-[#895af6] outline-none py-1"
+                                            />
+                                            <span className="text-xl font-bold text-white font-mono">€</span>
+                                        </div>
                                     ) : (
                                         <p className="text-xl font-bold text-white font-mono">{detailEst.pretVanzareEstimat.toLocaleString()} €</p>
                                     )}
@@ -418,7 +431,7 @@ function EstimariReparatii() {
                                 <div className={`rounded-xl p-4 border flex items-center gap-3 ${detailEst.statusDecizie === 'aprobat'
                                     ? 'bg-emerald-500/10 border-emerald-500/20'
                                     : 'bg-red-500/10 border-red-500/20'
-                                }`}>
+                                    }`}>
                                     <span className={`material-symbols-outlined text-3xl ${detailEst.statusDecizie === 'aprobat' ? 'text-emerald-400' : 'text-red-400'}`}>
                                         {detailEst.statusDecizie === 'aprobat' ? 'check_circle' : 'cancel'}
                                     </span>
@@ -495,7 +508,7 @@ function EstimariReparatii() {
                                     className={`flex-1 py-2.5 rounded-xl font-bold text-sm text-white transition ${isApprove
                                         ? 'bg-gradient-to-r from-emerald-600 to-emerald-700 hover:shadow-emerald-500/20 shadow-lg'
                                         : 'bg-gradient-to-r from-red-600 to-red-700 hover:shadow-red-500/20 shadow-lg'
-                                    }`}>
+                                        }`}>
                                     {isApprove ? 'Da, Aprobă' : 'Da, Anulează'}
                                 </button>
                             </div>

@@ -54,6 +54,14 @@ router.post('/register', async (req, res) => {
                 rol: utilizator.rol
             }
         })
+
+        // Audit log
+        await db.AuditLog.create({
+            actiune: 'INREGISTRARE_CONT',
+            detalii: `Client ${nume} ${prenume} (${email}) și-a creat un cont nou.`,
+            idUtilizator: utilizator.idUtilizator,
+            ip: req.ip || req.connection?.remoteAddress
+        }).catch(() => { })
     } catch (err) {
         console.error(err)
         res.status(500).json({ error: 'Eroare la înregistrare' })
@@ -106,6 +114,14 @@ router.post('/login', async (req, res) => {
                 rol: utilizator.rol
             }
         })
+
+        // Audit log
+        await db.AuditLog.create({
+            actiune: 'LOGIN',
+            detalii: `${utilizator.rol} ${utilizator.nume} ${utilizator.prenume} s-a autentificat în sistem.`,
+            idUtilizator: utilizator.idUtilizator,
+            ip: req.ip || req.connection?.remoteAddress
+        }).catch(() => { })
     } catch (err) {
         console.error(err)
         res.status(500).json({ error: 'Eroare la autentificare' })

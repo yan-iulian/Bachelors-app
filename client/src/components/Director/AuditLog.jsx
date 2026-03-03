@@ -2,35 +2,69 @@ import { useState, useEffect } from 'react';
 import { apiGet } from '../../config/apiHelper';
 
 const actiuneColors = {
-    'Aprobare': 'text-emerald-400 bg-emerald-500/10',
-    'Respingere': 'text-rose-400 bg-rose-500/10',
-    'Adăugare': 'text-primary bg-primary/10',
-    'Editare': 'text-blue-400 bg-blue-500/10',
-    'Ștergere': 'text-rose-400 bg-rose-500/10',
-    'Login': 'text-slate-400 bg-slate-500/10',
-    'Solicitare': 'text-amber-400 bg-amber-500/10',
-    'Finalizare': 'text-teal-400 bg-teal-500/10',
-    'Înregistrare': 'text-blue-400 bg-blue-500/10',
+    'LOGIN': 'text-slate-300 bg-slate-500/10',
+    'INREGISTRARE_CONT': 'text-indigo-400 bg-indigo-500/10',
+    'ADAUGARE_MASINA': 'text-[#895af6] bg-[#895af6]/10',
+    'EDITARE_MASINA': 'text-blue-400 bg-blue-500/10',
+    'PROMOTIE_MASINA': 'text-green-400 bg-green-500/10',
+    'STERGERE_MASINA': 'text-red-400 bg-red-500/10',
+    'SOLICITARE_TEST_DRIVE': 'text-amber-400 bg-amber-500/10',
+    'APROBARE_TEST_DRIVE': 'text-emerald-400 bg-emerald-500/10',
+    'RESPINGERE_TEST_DRIVE': 'text-rose-400 bg-rose-500/10',
+    'EFECTUARE_TEST_DRIVE': 'text-teal-400 bg-teal-500/10',
+    'INITIERE_TRANZACTIE': 'text-cyan-400 bg-cyan-500/10',
+    'APROBARE_TRANZACTIE': 'text-emerald-400 bg-emerald-500/10',
+    'ANULARE_TRANZACTIE': 'text-rose-400 bg-rose-500/10',
+    'INREGISTRARE_REPARATIE': 'text-indigo-400 bg-indigo-500/10',
+    'ACTUALIZARE_REPARATIE': 'text-blue-400 bg-blue-500/10',
+    'ACTUALIZARE_PIESA': 'text-blue-400 bg-blue-500/10',
+    'COMANDA_PIESE': 'text-amber-400 bg-amber-500/10',
+    'CERERE_DISCOUNT': 'text-violet-400 bg-violet-500/10',
+    'APROBARE_DISCOUNT': 'text-emerald-400 bg-emerald-500/10',
+    'RESPINGERE_DISCOUNT': 'text-rose-400 bg-rose-500/10',
+    'EXPORT_RAPORT': 'text-sky-400 bg-sky-500/10',
+    'UPLOAD_IMAGINI': 'text-fuchsia-400 bg-fuchsia-500/10',
 };
 const actiuneIcons = {
-    'Aprobare': 'check_circle',
-    'Respingere': 'cancel',
-    'Adăugare': 'add_circle',
-    'Editare': 'edit',
-    'Ștergere': 'delete',
-    'Login': 'login',
-    'Solicitare': 'send',
-    'Finalizare': 'task_alt',
-    'Înregistrare': 'note_add',
+    'LOGIN': 'login',
+    'INREGISTRARE_CONT': 'person_add',
+    'ADAUGARE_MASINA': 'add_circle',
+    'EDITARE_MASINA': 'edit',
+    'PROMOTIE_MASINA': 'local_offer',
+    'STERGERE_MASINA': 'delete',
+    'SOLICITARE_TEST_DRIVE': 'speed',
+    'APROBARE_TEST_DRIVE': 'check_circle',
+    'RESPINGERE_TEST_DRIVE': 'cancel',
+    'EFECTUARE_TEST_DRIVE': 'task_alt',
+    'INITIERE_TRANZACTIE': 'payments',
+    'APROBARE_TRANZACTIE': 'check_circle',
+    'ANULARE_TRANZACTIE': 'cancel',
+    'INREGISTRARE_REPARATIE': 'build',
+    'ACTUALIZARE_REPARATIE': 'engineering',
+    'ACTUALIZARE_PIESA': 'settings',
+    'COMANDA_PIESE': 'shopping_cart',
+    'CERERE_DISCOUNT': 'sell',
+    'APROBARE_DISCOUNT': 'thumb_up',
+    'RESPINGERE_DISCOUNT': 'thumb_down',
+    'EXPORT_RAPORT': 'download',
+    'UPLOAD_IMAGINI': 'photo_camera',
 };
 const rolColors = {
-    'Director': 'text-primary',
+    'Director': 'text-[#895af6]',
     'Client': 'text-teal-400',
     'Mecanic': 'text-amber-400',
 };
+const rolBgColors = {
+    'Director': 'bg-[#895af6]/20 text-[#895af6] border-[#895af6]/30',
+    'Client': 'bg-teal-500/20 text-teal-400 border-teal-500/30',
+    'Mecanic': 'bg-amber-500/20 text-amber-400 border-amber-500/30',
+};
 
-function getActiuneKey(actiune) {
-    return Object.keys(actiuneColors).find(k => actiune.startsWith(k)) || 'Login';
+function getActiuneStyle(actiune) {
+    return actiuneColors[actiune] || 'text-slate-400 bg-slate-500/10';
+}
+function getActiuneIcon(actiune) {
+    return actiuneIcons[actiune] || 'info';
 }
 
 function AuditLog() {
@@ -99,10 +133,11 @@ function AuditLog() {
                         <button
                             key={r}
                             onClick={() => setFilterRol(r)}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${filterRol === r
-                                ? 'bg-primary/20 text-primary border border-primary/30'
-                                : 'bg-white/5 text-slate-400 border border-white/10 hover:bg-white/10'
-                            }`}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${filterRol === r
+                                ? (r === 'Toate' ? 'bg-white/15 text-white border-white/20'
+                                    : rolBgColors[r] || 'bg-white/15 text-white border-white/20')
+                                : 'bg-white/5 text-slate-400 border-white/10 hover:bg-white/10'
+                                }`}
                         >
                             {r}
                         </button>
@@ -126,17 +161,18 @@ function AuditLog() {
                         </thead>
                         <tbody className="text-sm">
                             {filteredLoguri.map((l) => {
-                                const key = getActiuneKey(l.actiune);
+                                const style = getActiuneStyle(l.actiune);
+                                const icon = getActiuneIcon(l.actiune);
                                 const { date, time } = formatDateTime(l.dataOra);
                                 return (
                                     <tr key={l.idLog} className="border-b border-white/5 hover:bg-white/5 transition-colors">
                                         <td className="py-3 px-4 text-slate-600 font-mono text-xs">{l.idLog}</td>
                                         <td className="py-3 px-4">
                                             <div className="flex items-center gap-2.5">
-                                                <div className={`size-8 rounded-lg flex items-center justify-center ${actiuneColors[key]}`}>
-                                                    <span className="material-symbols-outlined text-[16px]">{actiuneIcons[key]}</span>
+                                                <div className={`size-8 rounded-lg flex items-center justify-center ${style}`}>
+                                                    <span className="material-symbols-outlined text-[16px]">{icon}</span>
                                                 </div>
-                                                <span className="text-white font-medium">{l.actiune}</span>
+                                                <span className="text-white font-medium">{l.actiune.replace(/_/g, ' ')}</span>
                                             </div>
                                         </td>
                                         <td className="py-3 px-4 text-slate-400 max-w-xs">

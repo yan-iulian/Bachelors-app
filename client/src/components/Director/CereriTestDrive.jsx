@@ -23,7 +23,7 @@ function CereriTestDrive() {
         try {
             const data = await apiGet('/api/testdrive');
             setCereri(data.map(td => ({
-                id: td.idTestDrive,
+                id: td.id,
                 client: td.client ? `${td.client.nume} ${td.client.prenume}` : '—',
                 email: td.client?.email || '',
                 telefon: td.client?.telefon || '',
@@ -119,7 +119,7 @@ function CereriTestDrive() {
                         className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${filterStatus === s
                             ? 'bg-primary/20 text-primary border border-primary/30'
                             : 'bg-white/5 text-slate-400 border border-white/10 hover:bg-white/10'
-                        }`}
+                            }`}
                     >
                         {s}
                     </button>

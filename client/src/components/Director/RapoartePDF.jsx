@@ -218,7 +218,12 @@ function RapoartePDF() {
     const [masiniStoc, setMasiniStoc] = useState([]);
     const [tranzactiiData, setTranzactiiData] = useState([]);
     const [reparatiiData, setReparatiiData] = useState([]);
-    const [generatedHistory, setGeneratedHistory] = useState([]);
+    const [generatedHistory, setGeneratedHistory] = useState(() => {
+        try {
+            const saved = localStorage.getItem('aeryan_rapoarte_history');
+            return saved ? JSON.parse(saved) : [];
+        } catch { return []; }
+    });
 
     useEffect(() => {
         const fetchAll = async () => {
@@ -279,10 +284,14 @@ function RapoartePDF() {
         const cfg = rapoarteConfig.find(r => r.id === selectedReport);
         const label = selectedReport === 'factura' ? `Factură ${facturaSelectata}` : cfg?.titlu || selectedReport;
         const now = new Date();
-        setGeneratedHistory(prev => [
-            { tip: label, data: `${now.toLocaleDateString('ro-RO')} ${now.toLocaleTimeString('ro-RO', { hour: '2-digit', minute: '2-digit' })}`, pagini: selectedReport === 'factura' ? 1 : 2 },
-            ...prev,
-        ]);
+        setGeneratedHistory(prev => {
+            const updated = [
+                { tip: label, data: `${now.toLocaleDateString('ro-RO')} ${now.toLocaleTimeString('ro-RO', { hour: '2-digit', minute: '2-digit' })}`, pagini: selectedReport === 'factura' ? 1 : 2 },
+                ...prev,
+            ];
+            try { localStorage.setItem('aeryan_rapoarte_history', JSON.stringify(updated)); } catch { }
+            return updated;
+        });
         setToast(`${label} — deschis pentru tipărire/descărcare`);
         setTimeout(() => setToast(null), 3500);
     };

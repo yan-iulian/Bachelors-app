@@ -41,7 +41,7 @@ function CereriDiscount() {
                 pretOriginal: d.Masina?.pretEuro || 0,
                 discountProcent: d.discountProcent,
                 motivDiscount: d.motivDiscount || '',
-                dataTranzactie: d.createdAt,
+                dataTranzactie: d.dataTranzactie,
                 status: normalizeStatus(d.status),
             })));
         } catch (e) { console.error('Eroare la încărcarea cererilor de discount:', e); }
@@ -119,7 +119,7 @@ function CereriDiscount() {
                         className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${filterStatus === s
                             ? 'bg-primary/20 text-primary border border-primary/30'
                             : 'bg-white/5 text-slate-400 border border-white/10 hover:bg-white/10'
-                        }`}
+                            }`}
                     >
                         {s === 'Toate' ? 'Toate' : statusLabels[s]}
                     </button>
