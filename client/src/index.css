@@ -9,8 +9,8 @@
   --color-primary: #895af6;
   --color-primary-dark: #7040d6;
   --color-secondary: #2e2249;
-  --color-accent-gold: #D4AF37;
-  --color-accent-teal: #2DD4BF;
+  --color-accent-gold: #d4af37;
+  --color-accent-teal: #2dd4bf;
   --color-accent-emerald: #10b981;
   --color-accent-coral: #fb7185;
   --color-accent-amber: #f59e0b;
@@ -49,7 +49,7 @@
 
 /* ---- Text Gradient Utility ---- */
 .text-gradient-gold {
-  background: linear-gradient(135deg, #FCD34D 0%, #D97706 100%);
+  background: linear-gradient(135deg, #fcd34d 0%, #d97706 100%);
   background-clip: text;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
@@ -105,6 +105,24 @@ body {
 
 /* ---- Toast Animation ---- */
 @keyframes slideUp {
-  from { opacity: 0; transform: translateY(20px); }
-  to   { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ---- Dropdown fade ---- */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }

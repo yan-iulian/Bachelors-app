@@ -1,521 +1,1182 @@
-import { useState, useEffect } from 'react';
-import { apiGet, apiPost, apiPut, apiDelete, apiUpload } from '../../config/apiHelper';
-import API_URL from '../../config/api';
+import { useState, useEffect } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
+import {
+  apiGet,
+  apiPost,
+  apiPut,
+  apiDelete,
+  apiUpload,
+} from "../../config/apiHelper";
+import API_URL from "../../config/api";
 
-const combustibilMap = { 0: 'Benzină', 1: 'Diesel', 2: 'Electric', 3: 'Hibrid' };
-const categorieMap = { 0: 'Sedan', 1: 'Hatchback', 2: 'Coupe', 3: 'Break', 4: 'SUV', 5: 'Cabrio', 6: 'Combi' };
+const combustibilMap = {
+  0: "Benzină",
+  1: "Diesel",
+  2: "Hibrid",
+  3: "Electric",
+};
+const categorieMap = {
+  0: "Sedan",
+  1: "SUV",
+  2: "Coupe",
+  3: "Hatchback",
+  4: "Cabrio",
+  5: "Break",
+};
+const statusOptions = ["Disponibil", "Rezervat", "Vandut", "În service"];
 const statusColors = {
-    'Disponibil': 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
-    'Rezervat': 'bg-amber-500/10 text-amber-400 border-amber-500/20',
-    'Vandut': 'bg-blue-500/10 text-blue-400 border-blue-500/20',
-    'În service': 'bg-rose-500/10 text-rose-400 border-rose-500/20',
+  Disponibil: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
+  Rezervat: "bg-amber-500/10 text-amber-400 border-amber-500/20",
+  Vandut: "bg-blue-500/10 text-blue-400 border-blue-500/20",
+  "În service": "bg-rose-500/10 text-rose-400 border-rose-500/20",
 };
 
 const emptyMasina = {
-    marca: '', model: '', anFabricatie: 2024, km: '', combustibil: 0,
-    pretEuro: '', status: 'Disponibil', categorieAuto: 0, locParcare: '',
-    esteInPromotie: false, pretPromotional: null
+  marca: "",
+  model: "",
+  anFabricatie: 2024,
+  km: "",
+  combustibil: 0,
+  pretEuro: "",
+  status: "Disponibil",
+  categorieAuto: 0,
+  locParcare: "",
+  esteInPromotie: false,
+  pretPromotional: null,
+  descriere: "",
+  scorViteza: 0,
+  scorConfort: 0,
+  scorConsum: 0,
+  scorManevrabilitate: 0,
+  scorPret: 0,
+  scorDesignInterior: 0,
+  scorDesignExterior: 0,
+  scorSpatiu: 0,
+  scorAcceleratieCuplu: 0,
+  scorFrana: 0,
 };
 
 function GestiuneMasini() {
-    const [masini, setMasini] = useState([]);
-    const [loading, setLoading] = useState(true);
-    const [search, setSearch] = useState('');
-    const [filterStatus, setFilterStatus] = useState('Toate');
-    const [showModal, setShowModal] = useState(false);
-    const [showDeleteConfirm, setShowDeleteConfirm] = useState(null);
-    const [editingMasina, setEditingMasina] = useState(null);
-    const [formData, setFormData] = useState(emptyMasina);
-    const [carImages, setCarImages] = useState([]);
-    const [uploading, setUploading] = useState(false);
-    const [pendingFiles, setPendingFiles] = useState([]);
-    const [pendingHeroIdx, setPendingHeroIdx] = useState(0);
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [masini, setMasini] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const [filterStatus, setFilterStatus] = useState("Toate");
+  const [showModal, setShowModal] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(null);
+  const [editingMasina, setEditingMasina] = useState(null);
+  const [formData, setFormData] = useState(emptyMasina);
+  const [carImages, setCarImages] = useState([]);
+  const [uploading, setUploading] = useState(false);
+  const [pendingFiles, setPendingFiles] = useState([]);
+  const [pendingHeroIdx, setPendingHeroIdx] = useState(0);
+  const [successModal, setSuccessModal] = useState(null); // { type: 'add'|'edit'|'delete', name: string }
 
-    const fetchMasini = async () => {
-        try {
-            const data = await apiGet('/api/masini');
-            setMasini(data);
-        } catch (e) { console.error('Eroare la încărcarea mașinilor:', e); }
-        finally { setLoading(false); }
-    };
+  const fetchMasini = async () => {
+    try {
+      const data = await apiGet("/api/masini");
+      setMasini(data);
+    } catch (e) {
+      console.error("Eroare la încărcarea mașinilor:", e);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    useEffect(() => { fetchMasini(); }, []);
+  useEffect(() => {
+    fetchMasini();
+  }, []);
 
-    // Filtrare
-    const filteredMasini = masini.filter(m => {
-        const matchSearch = `${m.marca} ${m.model} ${m.locParcare}`.toLowerCase().includes(search.toLowerCase());
-        const matchStatus = filterStatus === 'Toate' || m.status === filterStatus;
-        return matchSearch && matchStatus;
-    });
+  // Auto-open add modal when navigated with state.openAdd
+  useEffect(() => {
+    if (location.state?.openAdd) {
+      handleOpenAdd();
+      // Clear the state so it doesn't re-open on re-render
+      window.history.replaceState({}, "");
+    }
+  }, [location.state]);
 
-    const handleOpenAdd = () => {
-        setEditingMasina(null);
-        setFormData(emptyMasina);
-        setCarImages([]);
-        setPendingFiles([]);
-        setPendingHeroIdx(0);
-        setShowModal(true);
-    };
+  // Filtrare
+  const filteredMasini = masini.filter((m) => {
+    const matchSearch = `${m.marca} ${m.model} ${m.locParcare}`
+      .toLowerCase()
+      .includes(search.toLowerCase());
+    const matchStatus = filterStatus === "Toate" || m.status === filterStatus;
+    return matchSearch && matchStatus;
+  });
 
-    const handleOpenEdit = (masina) => {
-        setEditingMasina(masina);
-        setFormData({ ...masina });
-        setCarImages(masina.imagini || []);
-        setPendingFiles([]);
-        setPendingHeroIdx(0);
-        setShowModal(true);
-    };
+  const handleOpenAdd = () => {
+    setEditingMasina(null);
+    setFormData(emptyMasina);
+    setCarImages([]);
+    setPendingFiles([]);
+    setPendingHeroIdx(0);
+    setShowModal(true);
+  };
 
-    const handleSave = async () => {
-        try {
-            // Sanitize numeric fields
-            const data = {
-                ...formData,
-                km: formData.km === '' ? 0 : Number(formData.km),
-                pretEuro: formData.pretEuro === '' ? 0 : Number(formData.pretEuro),
-                pretPromotional: formData.pretPromotional ? Number(formData.pretPromotional) : null,
-                anFabricatie: Number(formData.anFabricatie),
-                combustibil: Number(formData.combustibil),
-                categorieAuto: Number(formData.categorieAuto),
-            };
+  const handleOpenEdit = async (masina) => {
+    // Fetch fresh car data from API (triggers auto-normalize for seed images)
+    try {
+      const fresh = await apiGet(`/api/masini/${masina.idMasina}`);
+      setEditingMasina(fresh);
+      setFormData({ ...fresh });
+      setCarImages(fresh.imagini || []);
+    } catch (e) {
+      // Fallback to local data if fetch fails
+      setEditingMasina(masina);
+      setFormData({ ...masina });
+      setCarImages(masina.imagini || []);
+    }
+    setPendingFiles([]);
+    setPendingHeroIdx(0);
+    setShowModal(true);
+  };
 
-            let carId;
-            if (editingMasina) {
-                await apiPut(`/api/masini/${editingMasina.idMasina}`, data);
-                carId = editingMasina.idMasina;
-            } else {
-                const newCar = await apiPost('/api/masini', data);
-                carId = newCar.idMasina;
-            }
-            // Upload pending files if any
-            if (pendingFiles.length > 0 && carId) {
-                const fd = new FormData();
-                pendingFiles.forEach(f => fd.append('imagini', f));
-                const uploadedImgs = await apiUpload(`/api/masini/${carId}/imagini`, fd);
-                // Set hero image if user selected one
-                if (uploadedImgs && uploadedImgs[pendingHeroIdx]) {
-                    await apiPut(`/api/masini/${carId}/imagini/${uploadedImgs[pendingHeroIdx].idImagine}/hero`, {});
-                }
-            }
-            await fetchMasini();
-            setPendingFiles([]);
-            setShowModal(false);
-        } catch (e) {
-            console.error('Eroare la salvare:', e);
-            alert('Eroare: ' + (e.message || 'Nu s-a putut salva mașina'));
+  // Helper: re-fetch the editing car from the API and sync all related state
+  const refreshEditingCar = async (carId) => {
+    const updatedCar = await apiGet(`/api/masini/${carId}`);
+    setEditingMasina(updatedCar);
+    setCarImages(updatedCar.imagini || []);
+    await fetchMasini();
+  };
+
+  const handleSave = async () => {
+    try {
+      // Sanitize: remove association/extra fields, convert numeric fields
+      const {
+        imagini,
+        director,
+        idMasina,
+        createdAt,
+        updatedAt,
+        ...cleanForm
+      } = formData;
+      const data = {
+        ...cleanForm,
+        km: cleanForm.km === "" ? 0 : Number(cleanForm.km),
+        pretEuro: cleanForm.pretEuro === "" ? 0 : Number(cleanForm.pretEuro),
+        pretPromotional: cleanForm.pretPromotional
+          ? Number(cleanForm.pretPromotional)
+          : null,
+        anFabricatie:
+          cleanForm.anFabricatie === "" ? 2024 : Number(cleanForm.anFabricatie),
+        combustibil: Number(cleanForm.combustibil),
+        categorieAuto: Number(cleanForm.categorieAuto),
+        scorViteza: Number(cleanForm.scorViteza) || 0,
+        scorConfort: Number(cleanForm.scorConfort) || 0,
+        scorConsum: Number(cleanForm.scorConsum) || 0,
+        scorManevrabilitate: Number(cleanForm.scorManevrabilitate) || 0,
+        scorPret: Number(cleanForm.scorPret) || 0,
+        scorDesignInterior: Number(cleanForm.scorDesignInterior) || 0,
+        scorDesignExterior: Number(cleanForm.scorDesignExterior) || 0,
+        scorSpatiu: Number(cleanForm.scorSpatiu) || 0,
+        scorAcceleratieCuplu: Number(cleanForm.scorAcceleratieCuplu) || 0,
+        scorFrana: Number(cleanForm.scorFrana) || 0,
+      };
+
+      let carId;
+      if (editingMasina) {
+        await apiPut(`/api/masini/${editingMasina.idMasina}`, data);
+        carId = editingMasina.idMasina;
+      } else {
+        const newCar = await apiPost("/api/masini", data);
+        carId = newCar.idMasina;
+      }
+      // Upload pending files if any
+      if (pendingFiles.length > 0 && carId) {
+        const fd = new FormData();
+        pendingFiles.forEach((f) => fd.append("imagini", f));
+        const uploadedImgs = await apiUpload(
+          `/api/masini/${carId}/imagini`,
+          fd,
+        );
+        // Set hero image if user selected one
+        if (uploadedImgs && uploadedImgs[pendingHeroIdx]) {
+          await apiPut(
+            `/api/masini/${carId}/imagini/${uploadedImgs[pendingHeroIdx].idImagine}/hero`,
+            {},
+          );
         }
-    };
+      }
+      await fetchMasini();
+      setPendingFiles([]);
+      const savedName = `${data.marca} ${data.model}`;
+      const wasEditing = !!editingMasina;
+      setShowModal(false);
+      setSuccessModal({
+        type: wasEditing ? "edit" : "add",
+        name: savedName,
+      });
+    } catch (e) {
+      console.error("Eroare la salvare:", e);
+      alert("Eroare: " + (e.message || "Nu s-a putut salva mașina"));
+    }
+  };
 
-    const handleUploadImages = async (files) => {
-        if (!editingMasina || files.length === 0) return;
-        setUploading(true);
-        try {
-            const fd = new FormData();
-            Array.from(files).forEach(f => fd.append('imagini', f));
-            const newImgs = await apiUpload(`/api/masini/${editingMasina.idMasina}/imagini`, fd);
-            setCarImages(prev => [...prev, ...newImgs]);
-            await fetchMasini();
-        } catch (e) { console.error('Eroare upload:', e); }
-        finally { setUploading(false); }
-    };
+  const handleUploadImages = async (files) => {
+    if (!editingMasina || files.length === 0) return;
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      Array.from(files).forEach((f) => fd.append("imagini", f));
+      await apiUpload(`/api/masini/${editingMasina.idMasina}/imagini`, fd);
+      // Re-fetch car data to get accurate image list from server
+      await refreshEditingCar(editingMasina.idMasina);
+    } catch (e) {
+      console.error("Eroare upload:", e);
+    } finally {
+      setUploading(false);
+    }
+  };
 
-    const handleDeleteImage = async (idImg) => {
-        if (!editingMasina) return;
-        try {
-            await apiDelete(`/api/masini/${editingMasina.idMasina}/imagini/${idImg}`);
-            setCarImages(prev => prev.filter(i => i.idImagine !== idImg));
-            await fetchMasini();
-        } catch (e) { console.error('Eroare ștergere imagine:', e); }
-    };
+  const handleDeleteImage = async (idImg) => {
+    if (!editingMasina) return;
+    try {
+      await apiDelete(`/api/masini/${editingMasina.idMasina}/imagini/${idImg}`);
+      await refreshEditingCar(editingMasina.idMasina);
+    } catch (e) {
+      console.error("Eroare ștergere imagine:", e);
+    }
+  };
 
-    const handleSetHero = async (idImg) => {
-        if (!editingMasina) return;
-        try {
-            await apiPut(`/api/masini/${editingMasina.idMasina}/imagini/${idImg}/hero`, {});
-            setCarImages(prev => prev.map(i => ({ ...i, esteHero: i.idImagine === idImg })));
-            await fetchMasini();
-        } catch (e) { console.error('Eroare setare hero:', e); }
-    };
+  const handleSetHero = async (idImg) => {
+    if (!editingMasina) return;
+    try {
+      await apiPut(
+        `/api/masini/${editingMasina.idMasina}/imagini/${idImg}/hero`,
+        {},
+      );
+      await refreshEditingCar(editingMasina.idMasina);
+    } catch (e) {
+      console.error("Eroare setare hero:", e);
+    }
+  };
 
-    const handleDelete = async (id) => {
-        try {
-            await apiDelete(`/api/masini/${id}`);
-            await fetchMasini();
-        } catch (e) { console.error('Eroare la ștergere:', e); }
-        setShowDeleteConfirm(null);
-    };
+  const handleDelete = async (id) => {
+    const car = masini.find((m) => m.idMasina === id);
+    const deletedName = car ? `${car.marca} ${car.model}` : "Mașină";
+    try {
+      await apiDelete(`/api/masini/${id}`);
+      await fetchMasini();
+      setSuccessModal({ type: "delete", name: deletedName });
+    } catch (e) {
+      console.error("Eroare la ștergere:", e);
+    }
+    setShowDeleteConfirm(null);
+  };
 
-    const stats = {
-        total: masini.length,
-        disponibile: masini.filter(m => m.status === 'Disponibil').length,
-        rezervate: masini.filter(m => m.status === 'Rezervat').length,
-        inService: masini.filter(m => m.status === 'În service').length,
-    };
+  const stats = {
+    total: masini.length,
+    disponibile: masini.filter((m) => m.status === "Disponibil").length,
+    rezervate: masini.filter((m) => m.status === "Rezervat").length,
+    inService: masini.filter((m) => m.status === "În service").length,
+  };
 
-    if (loading) return <div className="flex-1 flex items-center justify-center"><div className="text-slate-400 text-lg">Se încarcă mașinile...</div></div>;
-
+  if (loading)
     return (
-        <main className="flex-1 max-w-[1600px] mx-auto w-full p-6 space-y-6">
-            {/* Header */}
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                <div>
-                    <h1 className="text-2xl font-bold text-white">Gestiune Mașini</h1>
-                    <p className="text-slate-400 text-sm mt-1">Administrează parcul auto — adaugă, editează sau șterge vehicule</p>
-                </div>
-                <button onClick={handleOpenAdd} className="flex items-center gap-2 bg-primary hover:bg-primary-dark text-white px-5 py-2.5 rounded-lg font-medium transition-colors shadow-lg shadow-primary/20">
-                    <span className="material-symbols-outlined text-[20px]">add</span>
-                    Adaugă Mașină
-                </button>
-            </div>
-
-            {/* Stats mini */}
-            <section className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                {[
-                    { label: 'Total Vehicule', value: stats.total, icon: 'directions_car', color: 'text-primary' },
-                    { label: 'Disponibile', value: stats.disponibile, icon: 'check_circle', color: 'text-emerald-400' },
-                    { label: 'Rezervate', value: stats.rezervate, icon: 'bookmark', color: 'text-amber-400' },
-                    { label: 'În Service', value: stats.inService, icon: 'build', color: 'text-rose-400' },
-                ].map((s, i) => (
-                    <div key={i} className="glass-panel rounded-xl p-4 flex items-center gap-3">
-                        <div className={`size-10 rounded-lg bg-white/5 flex items-center justify-center ${s.color}`}>
-                            <span className="material-symbols-outlined">{s.icon}</span>
-                        </div>
-                        <div>
-                            <p className="text-2xl font-bold text-white">{s.value}</p>
-                            <p className="text-xs text-slate-400">{s.label}</p>
-                        </div>
-                    </div>
-                ))}
-            </section>
-
-            {/* Filters */}
-            <div className="glass-panel rounded-xl p-4 flex flex-col sm:flex-row gap-4 items-center">
-                <div className="relative flex-1 w-full">
-                    <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[20px]">search</span>
-                    <input
-                        type="text"
-                        placeholder="Caută după marcă, model sau loc parcare..."
-                        value={search}
-                        onChange={e => setSearch(e.target.value)}
-                        className="w-full bg-white/5 border border-white/10 text-white placeholder-slate-500 rounded-lg pl-10 pr-4 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary"
-                    />
-                </div>
-                <div className="flex gap-2 flex-wrap">
-                    {['Toate', 'Disponibil', 'Rezervat', 'În service'].map(s => (
-                        <button
-                            key={s}
-                            onClick={() => setFilterStatus(s)}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${filterStatus === s
-                                ? 'bg-primary/20 text-primary border border-primary/30'
-                                : 'bg-white/5 text-slate-400 border border-white/10 hover:bg-white/10'
-                                }`}
-                        >
-                            {s}
-                        </button>
-                    ))}
-                </div>
-            </div>
-
-            {/* Tabel */}
-            <div className="glass-panel rounded-xl overflow-hidden">
-                <div className="overflow-x-auto">
-                    <table className="w-full text-left border-collapse">
-                        <thead>
-                            <tr className="border-b border-white/5 text-xs text-slate-400 uppercase tracking-wider">
-                                <th className="py-4 px-4 font-medium">ID</th>
-                                <th className="py-4 px-4 font-medium">Vehicul</th>
-                                <th className="py-4 px-4 font-medium">An</th>
-                                <th className="py-4 px-4 font-medium">KM</th>
-                                <th className="py-4 px-4 font-medium">Combustibil</th>
-                                <th className="py-4 px-4 font-medium">Categorie</th>
-                                <th className="py-4 px-4 font-medium">Preț</th>
-                                <th className="py-4 px-4 font-medium">Loc Parcare</th>
-                                <th className="py-4 px-4 font-medium">Status</th>
-                                <th className="py-4 px-4 font-medium text-right">Acțiuni</th>
-                            </tr>
-                        </thead>
-                        <tbody className="text-sm">
-                            {filteredMasini.map((m) => (
-                                <tr key={m.idMasina} className="border-b border-white/5 hover:bg-white/5 transition-colors">
-                                    <td className="py-3 px-4 text-slate-500 font-mono text-xs">#{m.idMasina}</td>
-                                    <td className="py-3 px-4">
-                                        <div className="flex items-center gap-3">
-                                            <div className="size-9 rounded-lg bg-gradient-to-br from-primary/20 to-purple-900/20 flex items-center justify-center">
-                                                <span className="material-symbols-outlined text-primary text-lg">directions_car</span>
-                                            </div>
-                                            <div>
-                                                <p className="text-white font-semibold">{m.marca} {m.model}</p>
-                                                {m.esteInPromotie && (
-                                                    <span className="text-xs text-amber-400 flex items-center gap-1">
-                                                        <span className="material-symbols-outlined text-xs">local_offer</span>
-                                                        Promoție
-                                                    </span>
-                                                )}
-                                            </div>
-                                        </div>
-                                    </td>
-                                    <td className="py-3 px-4 text-slate-300">{m.anFabricatie}</td>
-                                    <td className="py-3 px-4 text-slate-300">{m.km.toLocaleString()} km</td>
-                                    <td className="py-3 px-4 text-slate-300">{combustibilMap[m.combustibil]}</td>
-                                    <td className="py-3 px-4 text-slate-300">{categorieMap[m.categorieAuto]}</td>
-                                    <td className="py-3 px-4">
-                                        {m.esteInPromotie && m.pretPromotional ? (
-                                            <div>
-                                                <span className="text-slate-500 line-through text-xs">€{m.pretEuro.toLocaleString()}</span>
-                                                <span className="text-emerald-400 font-semibold ml-1">€{m.pretPromotional.toLocaleString()}</span>
-                                            </div>
-                                        ) : (
-                                            <span className="text-white font-semibold">€{m.pretEuro.toLocaleString()}</span>
-                                        )}
-                                    </td>
-                                    <td className="py-3 px-4 text-slate-300 font-mono text-xs">{m.locParcare}</td>
-                                    <td className="py-3 px-4">
-                                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${statusColors[m.status] || 'bg-slate-500/10 text-slate-400 border-slate-500/20'}`}>
-                                            {m.status}
-                                        </span>
-                                    </td>
-                                    <td className="py-3 px-4">
-                                        <div className="flex items-center justify-end gap-1">
-                                            <button onClick={() => handleOpenEdit(m)} className="p-2 rounded-lg hover:bg-primary/20 text-slate-400 hover:text-primary transition-colors" title="Editează">
-                                                <span className="material-symbols-outlined text-[18px]">edit</span>
-                                            </button>
-                                            <button onClick={() => setShowDeleteConfirm(m.idMasina)} className="p-2 rounded-lg hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 transition-colors" title="Șterge">
-                                                <span className="material-symbols-outlined text-[18px]">delete</span>
-                                            </button>
-                                        </div>
-                                    </td>
-                                </tr>
-                            ))}
-                            {filteredMasini.length === 0 && (
-                                <tr>
-                                    <td colSpan="10" className="py-12 text-center text-slate-500">
-                                        <span className="material-symbols-outlined text-4xl mb-2 block">search_off</span>
-                                        Niciun vehicul găsit
-                                    </td>
-                                </tr>
-                            )}
-                        </tbody>
-                    </table>
-                </div>
-                <div className="border-t border-white/5 px-4 py-3 flex justify-between items-center text-sm text-slate-400">
-                    <span>{filteredMasini.length} din {masini.length} vehicule</span>
-                </div>
-            </div>
-
-            {/* Modal Adaugă/Editează */}
-            {showModal && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-                    <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={e => { if (e.target === e.currentTarget) setShowModal(false); }} />
-                    <div onClick={e => e.stopPropagation()} className="relative glass-panel rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 space-y-5 border border-white/10">
-                        <div className="flex justify-between items-center">
-                            <h2 className="text-xl font-bold text-white">
-                                {editingMasina ? 'Editează Mașină' : 'Adaugă Mașină Nouă'}
-                            </h2>
-                            <button onClick={() => setShowModal(false)} className="text-slate-400 hover:text-white transition-colors">
-                                <span className="material-symbols-outlined">close</span>
-                            </button>
-                        </div>
-
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            {/* Marca */}
-                            <div>
-                                <label className="block text-sm font-medium text-slate-300 mb-1.5">Marca {editingMasina && <span className="text-slate-500 text-xs ml-1">(needitabil)</span>}</label>
-                                <input type="text" value={formData.marca} onChange={e => setFormData({ ...formData, marca: e.target.value })}
-                                    disabled={!!editingMasina}
-                                    className={`w-full bg-white/5 border border-white/10 text-white rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary ${editingMasina ? 'opacity-50 cursor-not-allowed' : ''}`} placeholder="ex: BMW" />
-                            </div>
-                            {/* Model */}
-                            <div>
-                                <label className="block text-sm font-medium text-slate-300 mb-1.5">Model {editingMasina && <span className="text-slate-500 text-xs ml-1">(needitabil)</span>}</label>
-                                <input type="text" value={formData.model} onChange={e => setFormData({ ...formData, model: e.target.value })}
-                                    disabled={!!editingMasina}
-                                    className={`w-full bg-white/5 border border-white/10 text-white rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary ${editingMasina ? 'opacity-50 cursor-not-allowed' : ''}`} placeholder="ex: X5 xDrive40i" />
-                            </div>
-                            {/* An Fabricatie */}
-                            <div>
-                                <label className="block text-sm font-medium text-slate-300 mb-1.5">An Fabricație {editingMasina && <span className="text-slate-500 text-xs ml-1">(needitabil)</span>}</label>
-                                <input type="number" value={formData.anFabricatie} onChange={e => setFormData({ ...formData, anFabricatie: parseInt(e.target.value) || 0 })}
-                                    disabled={!!editingMasina}
-                                    className={`w-full bg-white/5 border border-white/10 text-white rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary ${editingMasina ? 'opacity-50 cursor-not-allowed' : ''}`} />
-                            </div>
-                            {/* Kilometraj */}
-                            <div>
-                                <label className="block text-sm font-medium text-slate-300 mb-1.5">Kilometraj {editingMasina && <span className="text-slate-500 text-xs ml-1">(needitabil)</span>}</label>
-                                <input type="number" value={formData.km} onChange={e => setFormData({ ...formData, km: e.target.value === '' ? '' : parseInt(e.target.value) })}
-                                    disabled={!!editingMasina}
-                                    className={`w-full bg-white/5 border border-white/10 text-white rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary ${editingMasina ? 'opacity-50 cursor-not-allowed' : ''}`} />
-                            </div>
-                            {/* Combustibil */}
-                            <div>
-                                <label className="block text-sm font-medium text-slate-300 mb-1.5">Combustibil {editingMasina && <span className="text-slate-500 text-xs ml-1">(needitabil)</span>}</label>
-                                <select value={formData.combustibil} onChange={e => setFormData({ ...formData, combustibil: parseInt(e.target.value) })}
-                                    disabled={!!editingMasina}
-                                    className={`w-full bg-white/5 border border-white/10 text-white rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary ${editingMasina ? 'opacity-50 cursor-not-allowed' : ''}`}>
-                                    {Object.entries(combustibilMap).map(([k, v]) => <option key={k} value={k} className="bg-[#1e2030]">{v}</option>)}
-                                </select>
-                            </div>
-                            {/* Categorie */}
-                            <div>
-                                <label className="block text-sm font-medium text-slate-300 mb-1.5">Categorie {editingMasina && <span className="text-slate-500 text-xs ml-1">(needitabil)</span>}</label>
-                                <select value={formData.categorieAuto} onChange={e => setFormData({ ...formData, categorieAuto: parseInt(e.target.value) })}
-                                    disabled={!!editingMasina}
-                                    className={`w-full bg-white/5 border border-white/10 text-white rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary ${editingMasina ? 'opacity-50 cursor-not-allowed' : ''}`}>
-                                    {Object.entries(categorieMap).map(([k, v]) => <option key={k} value={k} className="bg-[#1e2030]">{v}</option>)}
-                                </select>
-                            </div>
-                            {/* Pret */}
-                            <div>
-                                <label className="block text-sm font-medium text-slate-300 mb-1.5">Preț (€)</label>
-                                <input type="number" value={formData.pretEuro} onChange={e => setFormData({ ...formData, pretEuro: e.target.value === '' ? '' : parseFloat(e.target.value) })}
-                                    className="w-full bg-white/5 border border-white/10 text-white rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary" />
-                            </div>
-                            {/* Loc Parcare */}
-                            <div>
-                                <label className="block text-sm font-medium text-slate-300 mb-1.5">Loc Parcare</label>
-                                <input type="text" value={formData.locParcare} onChange={e => setFormData({ ...formData, locParcare: e.target.value })}
-                                    className="w-full bg-white/5 border border-white/10 text-white rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary" placeholder="ex: A-01" />
-                            </div>
-                            {/* Promotie */}
-                            <div className="flex flex-col justify-end">
-                                <label className="flex items-center gap-3 cursor-pointer">
-                                    <input type="checkbox" checked={formData.esteInPromotie}
-                                        onChange={e => setFormData({ ...formData, esteInPromotie: e.target.checked, pretPromotional: e.target.checked ? formData.pretPromotional : null })}
-                                        className="w-4 h-4 rounded bg-white/5 border-white/20 text-primary focus:ring-primary focus:ring-offset-0" />
-                                    <span className="text-sm text-slate-300">Este în promoție</span>
-                                </label>
-                                {formData.esteInPromotie && (
-                                    <input type="number" value={formData.pretPromotional || ''} onChange={e => setFormData({ ...formData, pretPromotional: parseFloat(e.target.value) || 0 })}
-                                        className="mt-2 w-full bg-white/5 border border-white/10 text-white rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
-                                        placeholder="Preț promoțional (€)" />
-                                )}
-                            </div>
-                        </div>
-
-                        {/* Imagini */}
-                        <div className="space-y-3">
-                            <label className="block text-sm font-medium text-slate-300">Imagini</label>
-
-                            {/* Existing images grid (edit mode) */}
-                            {editingMasina && carImages.length > 0 && (
-                                <div className="grid grid-cols-4 gap-2">
-                                    {carImages.map(img => (
-                                        <div key={img.idImagine} className={`relative group rounded-lg overflow-hidden border-2 transition-colors ${img.esteHero ? 'border-[#895af6]' : 'border-white/10'
-                                            }`}>
-                                            <img src={`${API_URL}${img.caleFisier}`} alt="" className="w-full h-20 object-cover" />
-                                            {img.esteHero && (
-                                                <span className="absolute top-1 left-1 bg-[#895af6] text-white text-[8px] font-bold px-1.5 py-0.5 rounded">HERO</span>
-                                            )}
-                                            <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1">
-                                                {!img.esteHero && (
-                                                    <button onClick={() => handleSetHero(img.idImagine)} className="p-1 bg-[#895af6] rounded text-white" title="Setează ca principală">
-                                                        <span className="material-symbols-outlined text-sm">star</span>
-                                                    </button>
-                                                )}
-                                                <button onClick={() => handleDeleteImage(img.idImagine)} className="p-1 bg-rose-500 rounded text-white" title="Șterge">
-                                                    <span className="material-symbols-outlined text-sm">close</span>
-                                                </button>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-
-                            {/* Preview pending files */}
-                            {pendingFiles.length > 0 && (
-                                <div className="grid grid-cols-4 gap-2">
-                                    {pendingFiles.map((file, i) => (
-                                        <div key={i} className={`relative group rounded-lg overflow-hidden border-2 transition-colors ${pendingHeroIdx === i ? 'border-[#895af6]' : 'border-emerald-500/30'
-                                            }`}>
-                                            <img src={URL.createObjectURL(file)} alt="" className="w-full h-20 object-cover" />
-                                            {pendingHeroIdx === i && (
-                                                <span className="absolute top-1 left-1 bg-[#895af6] text-white text-[8px] font-bold px-1.5 py-0.5 rounded">HERO</span>
-                                            )}
-                                            <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1">
-                                                {pendingHeroIdx !== i && (
-                                                    <button type="button" onClick={() => setPendingHeroIdx(i)} className="p-1 bg-[#895af6] rounded text-white" title="Setează ca principală">
-                                                        <span className="material-symbols-outlined text-sm">star</span>
-                                                    </button>
-                                                )}
-                                                <button type="button" onClick={() => {
-                                                    setPendingFiles(prev => prev.filter((_, j) => j !== i));
-                                                    if (pendingHeroIdx >= pendingFiles.length - 1) setPendingHeroIdx(0);
-                                                }} className="p-1 bg-rose-500 rounded text-white" title="Elimină">
-                                                    <span className="material-symbols-outlined text-sm">close</span>
-                                                </button>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-
-                            {/* Upload area */}
-                            <div className="relative">
-                                <input
-                                    id="car-image-input"
-                                    type="file"
-                                    multiple
-                                    accept="image/jpeg,image/png,image/webp"
-                                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-                                    onChange={e => {
-                                        const files = e.target.files;
-                                        if (!files || files.length === 0) return;
-                                        const fileArray = Array.from(files);
-                                        e.target.value = '';
-                                        if (editingMasina) {
-                                            handleUploadImages(fileArray);
-                                        } else {
-                                            setPendingFiles(prev => [...prev, ...fileArray]);
-                                        }
-                                    }}
-                                />
-                                <div className="flex items-center justify-center gap-2 p-4 rounded-lg border-2 border-dashed border-white/20 text-slate-400 pointer-events-none">
-                                    <span className="material-symbols-outlined">cloud_upload</span>
-                                    <span className="text-sm">{uploading ? 'Se încarcă...' : 'Adaugă imagini (JPG, PNG, WebP)'}</span>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="flex justify-end gap-3 pt-2">
-                            <button onClick={() => setShowModal(false)} className="px-4 py-2.5 rounded-lg text-sm font-medium text-slate-400 hover:text-white border border-white/10 hover:bg-white/5 transition-colors">
-                                Anulează
-                            </button>
-                            <button onClick={handleSave} className="px-6 py-2.5 rounded-lg text-sm font-medium text-white bg-primary hover:bg-primary-dark transition-colors shadow-lg shadow-primary/20">
-                                {editingMasina ? 'Salvează Modificările' : 'Adaugă Mașină'}
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* Modal Confirmare Ștergere */}
-            {showDeleteConfirm && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-                    <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowDeleteConfirm(null)} />
-                    <div className="relative glass-panel rounded-2xl w-full max-w-md p-6 space-y-5 border border-white/10">
-                        <div className="flex flex-col items-center text-center">
-                            <div className="size-16 rounded-full bg-rose-500/10 flex items-center justify-center mb-4">
-                                <span className="material-symbols-outlined text-rose-400 text-3xl">warning</span>
-                            </div>
-                            <h3 className="text-lg font-bold text-white">Confirmare Ștergere</h3>
-                            <p className="text-slate-400 text-sm mt-2">
-                                Ești sigur că vrei să ștergi <span className="text-white font-medium">
-                                    {masini.find(m => m.idMasina === showDeleteConfirm)?.marca} {masini.find(m => m.idMasina === showDeleteConfirm)?.model}
-                                </span>? Acțiunea este irreversibilă.
-                            </p>
-                        </div>
-                        <div className="flex gap-3">
-                            <button onClick={() => setShowDeleteConfirm(null)} className="flex-1 px-4 py-2.5 rounded-lg text-sm font-medium text-slate-400 hover:text-white border border-white/10 hover:bg-white/5 transition-colors">
-                                Anulează
-                            </button>
-                            <button onClick={() => handleDelete(showDeleteConfirm)} className="flex-1 px-4 py-2.5 rounded-lg text-sm font-medium text-white bg-rose-500 hover:bg-rose-600 transition-colors">
-                                Șterge
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
-        </main>
+      <div className="flex-1 flex items-center justify-center">
+        <div className="text-slate-400 text-lg">Se încarcă mașinile...</div>
+      </div>
     );
+
+  return (
+    <main className="flex-1 max-w-[1600px] mx-auto w-full p-6 space-y-6">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-white">Gestiune Mașini</h1>
+          <p className="text-slate-400 text-sm mt-1">
+            Administrează parcul auto — adaugă, editează sau șterge vehicule
+          </p>
+        </div>
+        <button
+          onClick={handleOpenAdd}
+          className="flex items-center gap-2.5 bg-[#895af6] hover:bg-[#7a4ae0] text-white px-6 py-3 rounded-xl font-bold text-sm transition-all shadow-lg shadow-[#895af6]/15 hover:shadow-[#895af6]/25"
+        >
+          <span className="material-symbols-outlined text-xl">add_circle</span>
+          Adaugă Mașină
+        </button>
+      </div>
+
+      {/* Stats mini */}
+      <section className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {[
+          {
+            label: "Total Vehicule",
+            value: stats.total,
+            icon: "directions_car",
+            color: "text-primary",
+          },
+          {
+            label: "Disponibile",
+            value: stats.disponibile,
+            icon: "check_circle",
+            color: "text-emerald-400",
+          },
+          {
+            label: "Rezervate",
+            value: stats.rezervate,
+            icon: "bookmark",
+            color: "text-amber-400",
+          },
+          {
+            label: "În Service",
+            value: stats.inService,
+            icon: "build",
+            color: "text-rose-400",
+          },
+        ].map((s, i) => (
+          <div
+            key={i}
+            className="glass-panel rounded-xl p-4 flex items-center gap-3"
+          >
+            <div
+              className={`size-10 rounded-lg bg-white/5 flex items-center justify-center ${s.color}`}
+            >
+              <span className="material-symbols-outlined">{s.icon}</span>
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-white">{s.value}</p>
+              <p className="text-xs text-slate-400">{s.label}</p>
+            </div>
+          </div>
+        ))}
+      </section>
+
+      {/* Filters */}
+      <div className="glass-panel rounded-xl p-4 flex flex-col sm:flex-row gap-4 items-center">
+        <div className="relative flex-1 w-full">
+          <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[20px]">
+            search
+          </span>
+          <input
+            type="text"
+            placeholder="Caută după marcă, model sau loc parcare..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full bg-white/5 border border-white/10 text-white placeholder-slate-500 rounded-lg pl-10 pr-4 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary"
+          />
+        </div>
+        <div className="flex gap-2 flex-wrap">
+          {["Toate", "Disponibil", "Rezervat", "În service"].map((s) => (
+            <button
+              key={s}
+              onClick={() => setFilterStatus(s)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                filterStatus === s
+                  ? "bg-primary/20 text-primary border border-primary/30"
+                  : "bg-white/5 text-slate-400 border border-white/10 hover:bg-white/10"
+              }`}
+            >
+              {s}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Tabel */}
+      <div className="glass-panel rounded-xl overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="border-b border-white/5 text-xs text-slate-400 uppercase tracking-wider">
+                <th className="py-4 px-4 font-medium">ID</th>
+                <th className="py-4 px-4 font-medium">Vehicul</th>
+                <th className="py-4 px-4 font-medium">An</th>
+                <th className="py-4 px-4 font-medium">KM</th>
+                <th className="py-4 px-4 font-medium">Combustibil</th>
+                <th className="py-4 px-4 font-medium">Categorie</th>
+                <th className="py-4 px-4 font-medium">Preț</th>
+                <th className="py-4 px-4 font-medium">Loc Parcare</th>
+                <th className="py-4 px-4 font-medium">Status</th>
+                <th className="py-4 px-4 font-medium text-right">Acțiuni</th>
+              </tr>
+            </thead>
+            <tbody className="text-sm">
+              {filteredMasini.map((m) => (
+                <tr
+                  key={m.idMasina}
+                  className="border-b border-white/5 hover:bg-white/5 transition-colors"
+                >
+                  <td className="py-3 px-4 text-slate-500 font-mono text-xs">
+                    #{m.idMasina}
+                  </td>
+                  <td className="py-3 px-4">
+                    <div className="flex items-center gap-3">
+                      <div className="size-9 rounded-lg bg-gradient-to-br from-primary/20 to-purple-900/20 flex items-center justify-center">
+                        <span className="material-symbols-outlined text-primary text-lg">
+                          directions_car
+                        </span>
+                      </div>
+                      <div>
+                        <p className="text-white font-semibold">
+                          {m.marca} {m.model}
+                        </p>
+                        {m.esteInPromotie && (
+                          <span className="text-xs text-amber-400 flex items-center gap-1">
+                            <span className="material-symbols-outlined text-xs">
+                              local_offer
+                            </span>
+                            Promoție
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </td>
+                  <td className="py-3 px-4 text-slate-300">{m.anFabricatie}</td>
+                  <td className="py-3 px-4 text-slate-300">
+                    {m.km.toLocaleString()} km
+                  </td>
+                  <td className="py-3 px-4 text-slate-300">
+                    {combustibilMap[m.combustibil]}
+                  </td>
+                  <td className="py-3 px-4 text-slate-300">
+                    {categorieMap[m.categorieAuto]}
+                  </td>
+                  <td className="py-3 px-4">
+                    {m.esteInPromotie && m.pretPromotional ? (
+                      <div>
+                        <span className="text-slate-500 line-through text-xs">
+                          €{m.pretEuro.toLocaleString()}
+                        </span>
+                        <span className="text-emerald-400 font-semibold ml-1">
+                          €{m.pretPromotional.toLocaleString()}
+                        </span>
+                      </div>
+                    ) : (
+                      <span className="text-white font-semibold">
+                        €{m.pretEuro.toLocaleString()}
+                      </span>
+                    )}
+                  </td>
+                  <td className="py-3 px-4 text-slate-300 font-mono text-xs">
+                    {m.locParcare}
+                  </td>
+                  <td className="py-3 px-4">
+                    <span
+                      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${statusColors[m.status] || "bg-slate-500/10 text-slate-400 border-slate-500/20"}`}
+                    >
+                      {m.status}
+                    </span>
+                  </td>
+                  <td className="py-3 px-4">
+                    <div className="flex items-center justify-end gap-1">
+                      <button
+                        onClick={() => navigate(`/client/masina/${m.idMasina}`)}
+                        className="p-2 rounded-lg hover:bg-teal-500/20 text-slate-400 hover:text-teal-400 transition-colors"
+                        title="Vizualizează anunțul"
+                      >
+                        <span className="material-symbols-outlined text-[18px]">
+                          visibility
+                        </span>
+                      </button>
+                      <button
+                        onClick={() => handleOpenEdit(m)}
+                        className="p-2 rounded-lg hover:bg-primary/20 text-slate-400 hover:text-primary transition-colors"
+                        title="Editează"
+                      >
+                        <span className="material-symbols-outlined text-[18px]">
+                          edit
+                        </span>
+                      </button>
+                      <button
+                        onClick={() => setShowDeleteConfirm(m.idMasina)}
+                        className="p-2 rounded-lg hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 transition-colors"
+                        title="Șterge"
+                      >
+                        <span className="material-symbols-outlined text-[18px]">
+                          delete
+                        </span>
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {filteredMasini.length === 0 && (
+                <tr>
+                  <td colSpan="10" className="py-12 text-center text-slate-500">
+                    <span className="material-symbols-outlined text-4xl mb-2 block">
+                      search_off
+                    </span>
+                    Niciun vehicul găsit
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+        <div className="border-t border-white/5 px-4 py-3 flex justify-between items-center text-sm text-slate-400">
+          <span>
+            {filteredMasini.length} din {masini.length} vehicule
+          </span>
+        </div>
+      </div>
+
+      {/* Modal Adaugă/Editează */}
+      {showModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) setShowModal(false);
+            }}
+          />
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="relative glass-panel rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 space-y-5 border border-white/10"
+          >
+            <div className="flex justify-between items-center">
+              <h2 className="text-xl font-bold text-white">
+                {editingMasina ? "Editează Mașină" : "Adaugă Mașină Nouă"}
+              </h2>
+              <button
+                onClick={() => setShowModal(false)}
+                className="text-slate-400 hover:text-white transition-colors"
+              >
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Marca */}
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-1.5">
+                  Marca{" "}
+                  {editingMasina && (
+                    <span className="text-slate-500 text-xs ml-1">
+                      (needitabil)
+                    </span>
+                  )}
+                </label>
+                <input
+                  type="text"
+                  value={formData.marca}
+                  onChange={(e) =>
+                    setFormData({ ...formData, marca: e.target.value })
+                  }
+                  disabled={!!editingMasina}
+                  className={`w-full bg-white/5 border border-white/10 text-white rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary ${editingMasina ? "opacity-50 cursor-not-allowed" : ""}`}
+                  placeholder="ex: BMW"
+                />
+              </div>
+              {/* Model */}
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-1.5">
+                  Model{" "}
+                  {editingMasina && (
+                    <span className="text-slate-500 text-xs ml-1">
+                      (needitabil)
+                    </span>
+                  )}
+                </label>
+                <input
+                  type="text"
+                  value={formData.model}
+                  onChange={(e) =>
+                    setFormData({ ...formData, model: e.target.value })
+                  }
+                  disabled={!!editingMasina}
+                  className={`w-full bg-white/5 border border-white/10 text-white rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary ${editingMasina ? "opacity-50 cursor-not-allowed" : ""}`}
+                  placeholder="ex: X5 xDrive40i"
+                />
+              </div>
+              {/* An Fabricatie */}
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-1.5">
+                  An Fabricație{" "}
+                  {editingMasina && (
+                    <span className="text-slate-500 text-xs ml-1">
+                      (needitabil)
+                    </span>
+                  )}
+                </label>
+                <input
+                  type="number"
+                  value={formData.anFabricatie}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      anFabricatie:
+                        e.target.value === "" ? "" : parseInt(e.target.value),
+                    })
+                  }
+                  disabled={!!editingMasina}
+                  className={`w-full bg-white/5 border border-white/10 text-white rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary ${editingMasina ? "opacity-50 cursor-not-allowed" : ""}`}
+                />
+              </div>
+              {/* Kilometraj */}
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-1.5">
+                  Kilometraj{" "}
+                  {editingMasina && (
+                    <span className="text-slate-500 text-xs ml-1">
+                      (needitabil)
+                    </span>
+                  )}
+                </label>
+                <input
+                  type="number"
+                  value={formData.km}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      km: e.target.value === "" ? "" : parseInt(e.target.value),
+                    })
+                  }
+                  disabled={!!editingMasina}
+                  className={`w-full bg-white/5 border border-white/10 text-white rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary ${editingMasina ? "opacity-50 cursor-not-allowed" : ""}`}
+                />
+              </div>
+              {/* Combustibil */}
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-1.5">
+                  Combustibil{" "}
+                  {editingMasina && (
+                    <span className="text-slate-500 text-xs ml-1">
+                      (needitabil)
+                    </span>
+                  )}
+                </label>
+                <select
+                  value={formData.combustibil}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      combustibil: parseInt(e.target.value),
+                    })
+                  }
+                  disabled={!!editingMasina}
+                  className={`w-full bg-white/5 border border-white/10 text-white rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary ${editingMasina ? "opacity-50 cursor-not-allowed" : ""}`}
+                >
+                  {Object.entries(combustibilMap).map(([k, v]) => (
+                    <option key={k} value={k} className="bg-[#1e2030]">
+                      {v}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {/* Categorie */}
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-1.5">
+                  Categorie{" "}
+                  {editingMasina && (
+                    <span className="text-slate-500 text-xs ml-1">
+                      (needitabil)
+                    </span>
+                  )}
+                </label>
+                <select
+                  value={formData.categorieAuto}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      categorieAuto: parseInt(e.target.value),
+                    })
+                  }
+                  disabled={!!editingMasina}
+                  className={`w-full bg-white/5 border border-white/10 text-white rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary ${editingMasina ? "opacity-50 cursor-not-allowed" : ""}`}
+                >
+                  {Object.entries(categorieMap).map(([k, v]) => (
+                    <option key={k} value={k} className="bg-[#1e2030]">
+                      {v}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {/* Pret */}
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-1.5">
+                  Preț (€)
+                </label>
+                <input
+                  type="number"
+                  value={formData.pretEuro}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      pretEuro:
+                        e.target.value === "" ? "" : parseFloat(e.target.value),
+                    })
+                  }
+                  className="w-full bg-white/5 border border-white/10 text-white rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+              </div>
+              {/* Loc Parcare */}
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-1.5">
+                  Loc Parcare
+                </label>
+                <input
+                  type="text"
+                  value={formData.locParcare}
+                  onChange={(e) =>
+                    setFormData({ ...formData, locParcare: e.target.value })
+                  }
+                  className="w-full bg-white/5 border border-white/10 text-white rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                  placeholder="ex: A-01"
+                />
+              </div>
+              {/* Status */}
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-1.5">
+                  Status
+                </label>
+                <select
+                  value={formData.status}
+                  onChange={(e) =>
+                    setFormData({ ...formData, status: e.target.value })
+                  }
+                  className="w-full bg-white/5 border border-white/10 text-white rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                >
+                  {statusOptions.map((s) => (
+                    <option key={s} value={s} className="bg-[#1e2030]">
+                      {s}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {/* Promotie */}
+              <div className="flex flex-col justify-end">
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={formData.esteInPromotie}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        esteInPromotie: e.target.checked,
+                        pretPromotional: e.target.checked
+                          ? formData.pretPromotional
+                          : null,
+                      })
+                    }
+                    className="w-4 h-4 rounded bg-white/5 border-white/20 text-primary focus:ring-primary focus:ring-offset-0"
+                  />
+                  <span className="text-sm text-slate-300">
+                    Este în promoție
+                  </span>
+                </label>
+                {formData.esteInPromotie && (
+                  <input
+                    type="number"
+                    value={formData.pretPromotional || ""}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        pretPromotional: parseFloat(e.target.value) || 0,
+                      })
+                    }
+                    className="mt-2 w-full bg-white/5 border border-white/10 text-white rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                    placeholder="Preț promoțional (€)"
+                  />
+                )}
+              </div>
+            </div>
+
+            {/* Descriere */}
+            <div>
+              <label className="block text-sm font-medium text-slate-300 mb-1.5">
+                Descriere
+              </label>
+              <textarea
+                value={formData.descriere || ""}
+                onChange={(e) =>
+                  setFormData({ ...formData, descriere: e.target.value })
+                }
+                rows={3}
+                className="w-full bg-white/5 border border-white/10 text-white rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary resize-none"
+                placeholder="Descriere detaliată a vehiculului..."
+              />
+            </div>
+
+            {/* Scoruri */}
+            <div className="space-y-3">
+              <div className="flex items-start gap-2">
+                <span className="material-symbols-outlined text-amber-400 text-lg mt-0.5">
+                  analytics
+                </span>
+                <div>
+                  <label className="block text-sm font-medium text-slate-300">
+                    Scoruri Performanță
+                  </label>
+                  <p className="text-xs text-amber-400/80 mt-0.5">
+                    ⚠ Scorurile trebuie evaluate de un specialist auto sau
+                    mecanic autorizat. Valorile incorecte pot afecta
+                    recomandările AI și analizele comparative.
+                  </p>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                {[
+                  { key: "scorViteza", label: "Viteză", icon: "speed" },
+                  {
+                    key: "scorConfort",
+                    label: "Confort",
+                    icon: "airline_seat_recline_extra",
+                  },
+                  {
+                    key: "scorConsum",
+                    label: "Consum",
+                    icon: "local_gas_station",
+                  },
+                  {
+                    key: "scorManevrabilitate",
+                    label: "Manevrabilitate",
+                    icon: "swap_driving_apps_wheel",
+                  },
+                  {
+                    key: "scorPret",
+                    label: "Raport Calitate-Preț",
+                    icon: "price_check",
+                  },
+                  {
+                    key: "scorDesignInterior",
+                    label: "Design Interior",
+                    icon: "dashboard",
+                  },
+                  {
+                    key: "scorDesignExterior",
+                    label: "Design Exterior",
+                    icon: "directions_car",
+                  },
+                  { key: "scorSpatiu", label: "Spațiu", icon: "open_in_full" },
+                  {
+                    key: "scorAcceleratieCuplu",
+                    label: "Accelerație / Cuplu",
+                    icon: "bolt",
+                  },
+                  {
+                    key: "scorFrana",
+                    label: "Frânare",
+                    icon: "do_not_disturb_on",
+                  },
+                ].map((s) => (
+                  <div
+                    key={s.key}
+                    className="flex items-center gap-2 bg-white/5 rounded-lg px-3 py-2"
+                  >
+                    <span className="material-symbols-outlined text-sm text-slate-500">
+                      {s.icon}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex justify-between items-center mb-1">
+                        <span className="text-xs text-slate-400 truncate">
+                          {s.label}
+                        </span>
+                        <span className="text-xs font-bold text-white ml-2">
+                          {formData[s.key] ?? 0}
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0"
+                        max="10"
+                        step="0.5"
+                        value={formData[s.key] ?? 0}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            [s.key]: parseFloat(e.target.value),
+                          })
+                        }
+                        className="w-full h-1.5 rounded-full appearance-none cursor-pointer accent-[#895af6] bg-white/10"
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Imagini */}
+            <div className="space-y-3">
+              <label className="block text-sm font-medium text-slate-300">
+                Imagini
+              </label>
+
+              {/* Existing images grid (edit mode) */}
+              {editingMasina && carImages.length > 0 && (
+                <div className="grid grid-cols-4 gap-2">
+                  {carImages.map((img) => (
+                    <div
+                      key={img.idImagine}
+                      className={`relative group rounded-lg overflow-hidden border-2 transition-colors ${
+                        img.esteHero ? "border-[#895af6]" : "border-white/10"
+                      }`}
+                    >
+                      <img
+                        src={`${API_URL}${img.caleFisier}`}
+                        alt=""
+                        className="w-full h-20 object-cover"
+                      />
+                      {img.esteHero && (
+                        <span className="absolute top-1 left-1 bg-[#895af6] text-white text-[8px] font-bold px-1.5 py-0.5 rounded">
+                          HERO
+                        </span>
+                      )}
+                      <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1">
+                        {!img.esteHero && (
+                          <button
+                            onClick={() => handleSetHero(img.idImagine)}
+                            className="p-1 bg-[#895af6] rounded text-white"
+                            title="Setează ca principală"
+                          >
+                            <span className="material-symbols-outlined text-sm">
+                              star
+                            </span>
+                          </button>
+                        )}
+                        <button
+                          onClick={() => handleDeleteImage(img.idImagine)}
+                          className="p-1 bg-rose-500 rounded text-white"
+                          title="Șterge"
+                        >
+                          <span className="material-symbols-outlined text-sm">
+                            close
+                          </span>
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Preview pending files */}
+              {pendingFiles.length > 0 && (
+                <div className="grid grid-cols-4 gap-2">
+                  {pendingFiles.map((file, i) => (
+                    <div
+                      key={i}
+                      className={`relative group rounded-lg overflow-hidden border-2 transition-colors ${
+                        pendingHeroIdx === i
+                          ? "border-[#895af6]"
+                          : "border-emerald-500/30"
+                      }`}
+                    >
+                      <img
+                        src={URL.createObjectURL(file)}
+                        alt=""
+                        className="w-full h-20 object-cover"
+                      />
+                      {pendingHeroIdx === i && (
+                        <span className="absolute top-1 left-1 bg-[#895af6] text-white text-[8px] font-bold px-1.5 py-0.5 rounded">
+                          HERO
+                        </span>
+                      )}
+                      <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1">
+                        {pendingHeroIdx !== i && (
+                          <button
+                            type="button"
+                            onClick={() => setPendingHeroIdx(i)}
+                            className="p-1 bg-[#895af6] rounded text-white"
+                            title="Setează ca principală"
+                          >
+                            <span className="material-symbols-outlined text-sm">
+                              star
+                            </span>
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPendingFiles((prev) =>
+                              prev.filter((_, j) => j !== i),
+                            );
+                            if (pendingHeroIdx >= pendingFiles.length - 1)
+                              setPendingHeroIdx(0);
+                          }}
+                          className="p-1 bg-rose-500 rounded text-white"
+                          title="Elimină"
+                        >
+                          <span className="material-symbols-outlined text-sm">
+                            close
+                          </span>
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Upload area */}
+              <div className="relative">
+                <input
+                  id="car-image-input"
+                  type="file"
+                  multiple
+                  accept="image/jpeg,image/png,image/webp"
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                  onChange={(e) => {
+                    const files = e.target.files;
+                    if (!files || files.length === 0) return;
+                    const fileArray = Array.from(files);
+                    e.target.value = "";
+                    if (editingMasina) {
+                      handleUploadImages(fileArray);
+                    } else {
+                      setPendingFiles((prev) => [...prev, ...fileArray]);
+                    }
+                  }}
+                />
+                <div className="flex items-center justify-center gap-2 p-4 rounded-lg border-2 border-dashed border-white/20 text-slate-400 pointer-events-none">
+                  <span className="material-symbols-outlined">
+                    cloud_upload
+                  </span>
+                  <span className="text-sm">
+                    {uploading
+                      ? "Se încarcă..."
+                      : "Adaugă imagini (JPG, PNG, WebP)"}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 pt-2">
+              <button
+                onClick={() => setShowModal(false)}
+                className="px-4 py-2.5 rounded-lg text-sm font-medium text-slate-400 hover:text-white border border-white/10 hover:bg-white/5 transition-colors"
+              >
+                Anulează
+              </button>
+              <button
+                onClick={handleSave}
+                className="px-6 py-2.5 rounded-lg text-sm font-medium text-white bg-primary hover:bg-primary-dark transition-colors shadow-lg shadow-primary/20"
+              >
+                {editingMasina ? "Salvează Modificările" : "Adaugă Mașină"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Confirmare Ștergere */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            onClick={() => setShowDeleteConfirm(null)}
+          />
+          <div className="relative glass-panel rounded-2xl w-full max-w-md p-6 space-y-5 border border-white/10">
+            <div className="flex flex-col items-center text-center">
+              <div className="size-16 rounded-full bg-rose-500/10 flex items-center justify-center mb-4">
+                <span className="material-symbols-outlined text-rose-400 text-3xl">
+                  warning
+                </span>
+              </div>
+              <h3 className="text-lg font-bold text-white">
+                Confirmare Ștergere
+              </h3>
+              <p className="text-slate-400 text-sm mt-2">
+                Ești sigur că vrei să ștergi{" "}
+                <span className="text-white font-medium">
+                  {masini.find((m) => m.idMasina === showDeleteConfirm)?.marca}{" "}
+                  {masini.find((m) => m.idMasina === showDeleteConfirm)?.model}
+                </span>
+                ? Acțiunea este irreversibilă.
+              </p>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowDeleteConfirm(null)}
+                className="flex-1 px-4 py-2.5 rounded-lg text-sm font-medium text-slate-400 hover:text-white border border-white/10 hover:bg-white/5 transition-colors"
+              >
+                Anulează
+              </button>
+              <button
+                onClick={() => handleDelete(showDeleteConfirm)}
+                className="flex-1 px-4 py-2.5 rounded-lg text-sm font-medium text-white bg-rose-500 hover:bg-rose-600 transition-colors"
+              >
+                Șterge
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Succes */}
+      {successModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            onClick={() => setSuccessModal(null)}
+          />
+          <div className="relative glass-panel rounded-2xl w-full max-w-sm p-6 space-y-5 border border-white/10 animate-[fadeIn_0.2s_ease-out]">
+            <div className="flex flex-col items-center text-center">
+              <div
+                className={`size-16 rounded-full flex items-center justify-center mb-4 ${
+                  successModal.type === "delete"
+                    ? "bg-rose-500/10"
+                    : successModal.type === "add"
+                      ? "bg-emerald-500/10"
+                      : "bg-[#895af6]/10"
+                }`}
+              >
+                <span
+                  className={`material-symbols-outlined text-3xl ${
+                    successModal.type === "delete"
+                      ? "text-rose-400"
+                      : successModal.type === "add"
+                        ? "text-emerald-400"
+                        : "text-[#895af6]"
+                  }`}
+                >
+                  {successModal.type === "delete"
+                    ? "delete_sweep"
+                    : successModal.type === "add"
+                      ? "check_circle"
+                      : "edit_note"}
+                </span>
+              </div>
+              <h3 className="text-lg font-bold text-white">
+                {successModal.type === "delete"
+                  ? "Mașină Ștearsă"
+                  : successModal.type === "add"
+                    ? "Mașină Adăugată"
+                    : "Mașină Actualizată"}
+              </h3>
+              <p className="text-slate-400 text-sm mt-2">
+                {successModal.type === "delete" ? (
+                  <>
+                    <span className="text-white font-medium">
+                      {successModal.name}
+                    </span>{" "}
+                    a fost eliminată din stoc.
+                  </>
+                ) : successModal.type === "add" ? (
+                  <>
+                    <span className="text-white font-medium">
+                      {successModal.name}
+                    </span>{" "}
+                    a fost adăugată cu succes în stoc.
+                  </>
+                ) : (
+                  <>
+                    Modificările pentru{" "}
+                    <span className="text-white font-medium">
+                      {successModal.name}
+                    </span>{" "}
+                    au fost salvate.
+                  </>
+                )}
+              </p>
+            </div>
+            <button
+              onClick={() => setSuccessModal(null)}
+              className={`w-full px-4 py-2.5 rounded-lg text-sm font-medium text-white transition-colors ${
+                successModal.type === "delete"
+                  ? "bg-rose-500 hover:bg-rose-600"
+                  : successModal.type === "add"
+                    ? "bg-emerald-500 hover:bg-emerald-600"
+                    : "bg-[#895af6] hover:bg-[#7040d6]"
+              }`}
+            >
+              OK
+            </button>
+          </div>
+        </div>
+      )}
+    </main>
+  );
 }
 
 export default GestiuneMasini;
