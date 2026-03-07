@@ -23,12 +23,19 @@ const categorieMap = {
   4: "Cabrio",
   5: "Break",
 };
-const statusOptions = ["Disponibil", "Rezervat", "Vandut", "În service"];
+const statusOptions = [
+  "Disponibil",
+  "Rezervat",
+  "Vandut",
+  "În service",
+  "Reparat",
+];
 const statusColors = {
   Disponibil: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
   Rezervat: "bg-amber-500/10 text-amber-400 border-amber-500/20",
   Vandut: "bg-blue-500/10 text-blue-400 border-blue-500/20",
   "În service": "bg-rose-500/10 text-rose-400 border-rose-500/20",
+  Reparat: "bg-teal-500/10 text-teal-400 border-teal-500/20",
 };
 
 const emptyMasina = {
@@ -41,6 +48,7 @@ const emptyMasina = {
   status: "Disponibil",
   categorieAuto: 0,
   locParcare: "",
+  vin: "",
   esteInPromotie: false,
   pretPromotional: null,
   descriere: "",
@@ -71,7 +79,8 @@ function GestiuneMasini() {
   const [uploading, setUploading] = useState(false);
   const [pendingFiles, setPendingFiles] = useState([]);
   const [pendingHeroIdx, setPendingHeroIdx] = useState(0);
-  const [successModal, setSuccessModal] = useState(null); // { type: 'add'|'edit'|'delete', name: string }
+  const [successModal, setSuccessModal] = useState(null); // { type: 'add'|'edit'|'delete'|'publish', name: string }
+  const [publishMode, setPublishMode] = useState(false);
 
   const fetchMasini = async () => {
     try {
@@ -92,7 +101,11 @@ function GestiuneMasini() {
   useEffect(() => {
     if (location.state?.openAdd) {
       handleOpenAdd();
-      // Clear the state so it doesn't re-open on re-render
+      window.history.replaceState({}, "");
+    }
+    // Auto-filter "Reparat" when navigated from notification or dashboard
+    if (location.state?.filterReparat) {
+      setFilterStatus("Reparat");
       window.history.replaceState({}, "");
     }
   }, [location.state]);
@@ -175,6 +188,11 @@ function GestiuneMasini() {
         scorFrana: Number(cleanForm.scorFrana) || 0,
       };
 
+      // Force status to "Disponibil" in publish mode
+      if (publishMode) {
+        data.status = "Disponibil";
+      }
+
       let carId;
       if (editingMasina) {
         await apiPut(`/api/masini/${editingMasina.idMasina}`, data);
@@ -203,9 +221,11 @@ function GestiuneMasini() {
       setPendingFiles([]);
       const savedName = `${data.marca} ${data.model}`;
       const wasEditing = !!editingMasina;
+      const wasPublish = publishMode;
       setShowModal(false);
+      setPublishMode(false);
       setSuccessModal({
-        type: wasEditing ? "edit" : "add",
+        type: wasPublish ? "publish" : wasEditing ? "edit" : "add",
         name: savedName,
       });
     } catch (e) {
@@ -266,11 +286,29 @@ function GestiuneMasini() {
     setShowDeleteConfirm(null);
   };
 
+  const handlePublish = async (masina) => {
+    try {
+      const fresh = await apiGet(`/api/masini/${masina.idMasina}`);
+      setEditingMasina(fresh);
+      setFormData({ ...fresh, status: "Disponibil" });
+      setCarImages(fresh.imagini || []);
+    } catch (_e) {
+      setEditingMasina(masina);
+      setFormData({ ...masina, status: "Disponibil" });
+      setCarImages(masina.imagini || []);
+    }
+    setPendingFiles([]);
+    setPendingHeroIdx(0);
+    setPublishMode(true);
+    setShowModal(true);
+  };
+
   const stats = {
     total: masini.length,
     disponibile: masini.filter((m) => m.status === "Disponibil").length,
     rezervate: masini.filter((m) => m.status === "Rezervat").length,
     inService: masini.filter((m) => m.status === "În service").length,
+    reparate: masini.filter((m) => m.status === "Reparat").length,
   };
 
   if (loading)
@@ -300,7 +338,7 @@ function GestiuneMasini() {
       </div>
 
       {/* Stats mini */}
-      <section className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <section className="grid grid-cols-2 md:grid-cols-5 gap-4">
         {[
           {
             label: "Total Vehicule",
@@ -325,6 +363,12 @@ function GestiuneMasini() {
             value: stats.inService,
             icon: "build",
             color: "text-rose-400",
+          },
+          {
+            label: "Reparate",
+            value: stats.reparate,
+            icon: "build_circle",
+            color: "text-teal-400",
           },
         ].map((s, i) => (
           <div
@@ -359,19 +403,21 @@ function GestiuneMasini() {
           />
         </div>
         <div className="flex gap-2 flex-wrap">
-          {["Toate", "Disponibil", "Rezervat", "În service"].map((s) => (
-            <button
-              key={s}
-              onClick={() => setFilterStatus(s)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                filterStatus === s
-                  ? "bg-primary/20 text-primary border border-primary/30"
-                  : "bg-white/5 text-slate-400 border border-white/10 hover:bg-white/10"
-              }`}
-            >
-              {s}
-            </button>
-          ))}
+          {["Toate", "Disponibil", "Rezervat", "În service", "Reparat"].map(
+            (s) => (
+              <button
+                key={s}
+                onClick={() => setFilterStatus(s)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                  filterStatus === s
+                    ? "bg-primary/20 text-primary border border-primary/30"
+                    : "bg-white/5 text-slate-400 border border-white/10 hover:bg-white/10"
+                }`}
+              >
+                {s}
+              </button>
+            ),
+          )}
         </div>
       </div>
 
@@ -462,6 +508,18 @@ function GestiuneMasini() {
                   </td>
                   <td className="py-3 px-4">
                     <div className="flex items-center justify-end gap-1">
+                      {m.status === "Reparat" && (
+                        <button
+                          onClick={() => handlePublish(m)}
+                          className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-teal-500/15 text-teal-400 hover:bg-teal-500/25 transition-colors text-xs font-medium border border-teal-500/20"
+                          title="Publică în Catalog"
+                        >
+                          <span className="material-symbols-outlined text-[16px]">
+                            publish
+                          </span>
+                          Publică
+                        </button>
+                      )}
                       <button
                         onClick={() => navigate(`/client/masina/${m.idMasina}`)}
                         className="p-2 rounded-lg hover:bg-teal-500/20 text-slate-400 hover:text-teal-400 transition-colors"
@@ -528,15 +586,34 @@ function GestiuneMasini() {
           >
             <div className="flex justify-between items-center">
               <h2 className="text-xl font-bold text-white">
-                {editingMasina ? "Editează Mașină" : "Adaugă Mașină Nouă"}
+                {publishMode
+                  ? "Publică Mașină Reparată"
+                  : editingMasina
+                    ? "Editează Mașină"
+                    : "Adaugă Mașină Nouă"}
               </h2>
               <button
-                onClick={() => setShowModal(false)}
+                onClick={() => {
+                  setShowModal(false);
+                  setPublishMode(false);
+                }}
                 className="text-slate-400 hover:text-white transition-colors"
               >
                 <span className="material-symbols-outlined">close</span>
               </button>
             </div>
+
+            {publishMode && (
+              <div className="flex items-center gap-3 bg-teal-500/10 border border-teal-500/20 rounded-xl px-4 py-3">
+                <span className="material-symbols-outlined text-teal-400">
+                  info
+                </span>
+                <p className="text-sm text-teal-300">
+                  Această mașină a fost reparată. Verificați detaliile și
+                  scorurile atribuite de mecanic, apoi publicați în catalog.
+                </p>
+              </div>
+            )}
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {/* Marca */}
@@ -717,17 +794,60 @@ function GestiuneMasini() {
                   placeholder="ex: A-01"
                 />
               </div>
+              {/* VIN */}
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-1.5">
+                  VIN (Serie Șasiu)
+                </label>
+                <input
+                  type="text"
+                  value={formData.vin || ""}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      vin: e.target.value.toUpperCase(),
+                    })
+                  }
+                  maxLength={17}
+                  className="w-full bg-white/5 border border-white/10 text-white rounded-lg px-3 py-2.5 text-sm font-mono tracking-wider focus:outline-none focus:ring-1 focus:ring-primary uppercase"
+                  placeholder="ex: WBAPH5C55BA123456"
+                />
+                {formData.vin && formData.vin.length !== 17 && (
+                  <p className="text-xs text-amber-400 mt-1">
+                    VIN-ul trebuie să aibă exact 17 caractere (
+                    {formData.vin.length}/17)
+                  </p>
+                )}
+              </div>
               {/* Status */}
               <div>
                 <label className="block text-sm font-medium text-slate-300 mb-1.5">
                   Status
+                  {(formData.status === "În service" ||
+                    formData.status === "Reparat") &&
+                    !publishMode && (
+                      <span className="text-amber-400 text-xs ml-2 font-normal">
+                        (gestionat automat de workflow-ul reparații)
+                      </span>
+                    )}
                 </label>
                 <select
                   value={formData.status}
                   onChange={(e) =>
                     setFormData({ ...formData, status: e.target.value })
                   }
-                  className="w-full bg-white/5 border border-white/10 text-white rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                  disabled={
+                    publishMode ||
+                    formData.status === "În service" ||
+                    formData.status === "Reparat"
+                  }
+                  className={`w-full bg-white/5 border border-white/10 text-white rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary ${
+                    publishMode ||
+                    formData.status === "În service" ||
+                    formData.status === "Reparat"
+                      ? "opacity-60 cursor-not-allowed"
+                      : ""
+                  }`}
                 >
                   {statusOptions.map((s) => (
                     <option key={s} value={s} className="bg-[#1e2030]">
@@ -798,12 +918,14 @@ function GestiuneMasini() {
                 </span>
                 <div>
                   <label className="block text-sm font-medium text-slate-300">
-                    Scoruri Performanță
+                    {publishMode
+                      ? "Scoruri Atribuite de Mecanic"
+                      : "Scoruri Performanță"}
                   </label>
                   <p className="text-xs text-amber-400/80 mt-0.5">
-                    ⚠ Scorurile trebuie evaluate de un specialist auto sau
-                    mecanic autorizat. Valorile incorecte pot afecta
-                    recomandările AI și analizele comparative.
+                    {publishMode
+                      ? "Aceste scoruri au fost atribuite de mecanic după repararea vehiculului. Sunt vizibile doar pentru referință."
+                      : "⚠ Scorurile trebuie evaluate de un specialist auto sau mecanic autorizat. Valorile incorecte pot afecta recomandările AI și analizele comparative."}
                   </p>
                 </div>
               </div>
@@ -880,7 +1002,8 @@ function GestiuneMasini() {
                             [s.key]: parseFloat(e.target.value),
                           })
                         }
-                        className="w-full h-1.5 rounded-full appearance-none cursor-pointer accent-[#895af6] bg-white/10"
+                        disabled={publishMode}
+                        className={`w-full h-1.5 rounded-full appearance-none cursor-pointer accent-[#895af6] bg-white/10 ${publishMode ? "opacity-60 cursor-not-allowed" : ""}`}
                       />
                     </div>
                   </div>
@@ -1033,16 +1156,27 @@ function GestiuneMasini() {
 
             <div className="flex justify-end gap-3 pt-2">
               <button
-                onClick={() => setShowModal(false)}
+                onClick={() => {
+                  setShowModal(false);
+                  setPublishMode(false);
+                }}
                 className="px-4 py-2.5 rounded-lg text-sm font-medium text-slate-400 hover:text-white border border-white/10 hover:bg-white/5 transition-colors"
               >
                 Anulează
               </button>
               <button
                 onClick={handleSave}
-                className="px-6 py-2.5 rounded-lg text-sm font-medium text-white bg-primary hover:bg-primary-dark transition-colors shadow-lg shadow-primary/20"
+                className={`px-6 py-2.5 rounded-lg text-sm font-medium text-white transition-colors shadow-lg ${
+                  publishMode
+                    ? "bg-teal-500 hover:bg-teal-600 shadow-teal-500/20"
+                    : "bg-primary hover:bg-primary-dark shadow-primary/20"
+                }`}
               >
-                {editingMasina ? "Salvează Modificările" : "Adaugă Mașină"}
+                {publishMode
+                  ? "Publică în Catalog"
+                  : editingMasina
+                    ? "Salvează Modificările"
+                    : "Adaugă Mașină"}
               </button>
             </div>
           </div>
@@ -1106,33 +1240,41 @@ function GestiuneMasini() {
                 className={`size-16 rounded-full flex items-center justify-center mb-4 ${
                   successModal.type === "delete"
                     ? "bg-rose-500/10"
-                    : successModal.type === "add"
-                      ? "bg-emerald-500/10"
-                      : "bg-[#895af6]/10"
+                    : successModal.type === "publish"
+                      ? "bg-teal-500/10"
+                      : successModal.type === "add"
+                        ? "bg-emerald-500/10"
+                        : "bg-[#895af6]/10"
                 }`}
               >
                 <span
                   className={`material-symbols-outlined text-3xl ${
                     successModal.type === "delete"
                       ? "text-rose-400"
-                      : successModal.type === "add"
-                        ? "text-emerald-400"
-                        : "text-[#895af6]"
+                      : successModal.type === "publish"
+                        ? "text-teal-400"
+                        : successModal.type === "add"
+                          ? "text-emerald-400"
+                          : "text-[#895af6]"
                   }`}
                 >
                   {successModal.type === "delete"
                     ? "delete_sweep"
-                    : successModal.type === "add"
-                      ? "check_circle"
-                      : "edit_note"}
+                    : successModal.type === "publish"
+                      ? "publish"
+                      : successModal.type === "add"
+                        ? "check_circle"
+                        : "edit_note"}
                 </span>
               </div>
               <h3 className="text-lg font-bold text-white">
                 {successModal.type === "delete"
                   ? "Mașină Ștearsă"
-                  : successModal.type === "add"
-                    ? "Mașină Adăugată"
-                    : "Mașină Actualizată"}
+                  : successModal.type === "publish"
+                    ? "Mașină Publicată"
+                    : successModal.type === "add"
+                      ? "Mașină Adăugată"
+                      : "Mașină Actualizată"}
               </h3>
               <p className="text-slate-400 text-sm mt-2">
                 {successModal.type === "delete" ? (
@@ -1141,6 +1283,13 @@ function GestiuneMasini() {
                       {successModal.name}
                     </span>{" "}
                     a fost eliminată din stoc.
+                  </>
+                ) : successModal.type === "publish" ? (
+                  <>
+                    <span className="text-white font-medium">
+                      {successModal.name}
+                    </span>{" "}
+                    a fost publicată în catalogul de mașini disponibile.
                   </>
                 ) : successModal.type === "add" ? (
                   <>
@@ -1165,9 +1314,11 @@ function GestiuneMasini() {
               className={`w-full px-4 py-2.5 rounded-lg text-sm font-medium text-white transition-colors ${
                 successModal.type === "delete"
                   ? "bg-rose-500 hover:bg-rose-600"
-                  : successModal.type === "add"
-                    ? "bg-emerald-500 hover:bg-emerald-600"
-                    : "bg-[#895af6] hover:bg-[#7040d6]"
+                  : successModal.type === "publish"
+                    ? "bg-teal-500 hover:bg-teal-600"
+                    : successModal.type === "add"
+                      ? "bg-emerald-500 hover:bg-emerald-600"
+                      : "bg-[#895af6] hover:bg-[#7040d6]"
               }`}
             >
               OK

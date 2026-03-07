@@ -124,6 +124,8 @@ function RecomandareAI() {
   const [cosineResults, setCosineResults] = useState([]);
   const [pcaData, setPcaData] = useState(null);
   const [hcData, setHcData] = useState(null);
+  const [kmeansData, setKmeansData] = useState(null);
+  const [anomalyData, setAnomalyData] = useState(null);
   const [aiError, setAiError] = useState("");
 
   const criterii = tipTest === "quick" ? criteriiQuick : criteriiDetailed;
@@ -138,6 +140,12 @@ function RecomandareAI() {
         apiPost("/ai/cosine", body),
         apiPost("/ai/pca", body),
         apiPost("/ai/hc", body),
+      ]);
+
+      // Fetch K-Means (with HC cluster count for comparison) + Anomaly in parallel
+      const [kmeans, anomaly] = await Promise.all([
+        apiPost("/ai/kmeans", { ...body, nrClusteri_hc: hc.nrClusteri }),
+        apiPost("/ai/anomaly", { activeKeys }),
       ]);
 
       // Enrich cosine results with image URLs
@@ -160,9 +168,30 @@ function RecomandareAI() {
         }));
       }
 
+      // Enrich KMeans cars
+      if (kmeans.cars) {
+        kmeans.cars = kmeans.cars.map((m) => ({
+          ...m,
+          imagine: m.imagine
+            ? `${API_URL}${m.imagine}`
+            : `https://placehold.co/600x400/2e2249/895af6?text=${encodeURIComponent(m.marca + " " + m.model)}`,
+        }));
+      }
+      // Enrich Anomaly cars
+      if (anomaly.cars) {
+        anomaly.cars = anomaly.cars.map((m) => ({
+          ...m,
+          imagine: m.imagine
+            ? `${API_URL}${m.imagine}`
+            : `https://placehold.co/600x400/2e2249/895af6?text=${encodeURIComponent(m.marca + " " + m.model)}`,
+        }));
+      }
+
       setCosineResults(enriched);
       setPcaData(pca);
       setHcData(hc);
+      setKmeansData(kmeans);
+      setAnomalyData(anomaly);
 
       // Persist per-user: AI match scores and preferences
       const matchMap = {};
@@ -188,6 +217,8 @@ function RecomandareAI() {
     setCosineResults([]);
     setPcaData(null);
     setHcData(null);
+    setKmeansData(null);
+    setAnomalyData(null);
     setAiError("");
     setPreferinte(loadSavedPrefs());
   };
@@ -231,6 +262,12 @@ function RecomandareAI() {
       icon: "science",
       color: "text-[#895af6]",
     },
+    {
+      key: "anomaly",
+      label: "Anomalii & Chilipiruri",
+      icon: "local_offer",
+      color: "text-[#22c55e]",
+    },
   ];
 
   return (
@@ -259,7 +296,7 @@ function RecomandareAI() {
           </div>
           <p className="text-slate-400 text-sm ml-12">
             {showResults
-              ? `${cosineResults.length} mașini analizate – 3 algoritmi: Cosine Similarity, PCA, Clustering Ierarhic`
+              ? `${cosineResults.length} mașini analizate – 6 algoritmi: Cosine Similarity, PCA, HC, K-Means, Anomaly Detection, Car DNA`
               : "Completează preferințele tale și descoperă mașina potrivită"}
           </p>
         </div>
@@ -420,44 +457,128 @@ function RecomandareAI() {
             </div>
           )}
 
-          {/* Info Box */}
-          <div className="bg-[#2DD4BF]/5 rounded-xl p-4 border border-[#2DD4BF]/10 flex items-start gap-3">
-            <span className="material-symbols-outlined text-[#2DD4BF] text-xl mt-0.5">
-              psychology
-            </span>
-            <div>
-              <p className="text-sm font-bold text-[#2DD4BF] mb-2">
-                Cum funcționează? – 3 Algoritmi
-              </p>
-              <div className="space-y-2 text-xs text-slate-400 leading-relaxed">
-                <p>
-                  <strong className="text-[#2DD4BF]">
-                    1. Cosine Similarity (Similaritate Cosinus)
-                  </strong>{" "}
-                  — Calculează similaritatea direcțională ponderată între
-                  vectorul tău de preferințe și scorurile fiecărei mașini.
-                  Măsoară <em>direcția</em> preferinței, nu magnitudinea,
-                  oferind rezultate mai precise decât distanța euclidiană.
-                </p>
-                <p>
-                  <strong className="text-[#895af6]">
-                    2. ACP (Analiza Componentelor Principale)
-                  </strong>{" "}
-                  — Reduce dimensionalitatea celor {criterii.length} criterii la
-                  2 componente principale, permițând vizualizarea mașinilor și a
-                  preferințelor tale într-un spațiu 2D. Include Scree Plot,
-                  cercul corelațiilor și criteriile Kaiser/Cattell.
-                </p>
-                <p>
-                  <strong className="text-[#D4AF37]">
-                    3. AC (Analiza Clusterilor Ierarhici)
-                  </strong>{" "}
-                  — Grupează mașinile în clustere similare folosind metoda Ward.
-                  Identifică grupul de mașini cel mai compatibil cu profilul tău
-                  și afișează indicii Silhouette pentru validarea calității
-                  partiției.
-                </p>
+          {/* Info Box – format insights */}
+          <div className="bg-white/[0.02] rounded-xl p-5 border border-white/5">
+            <div className="flex items-center justify-center gap-3 mb-5">
+              <div className="h-px flex-1 bg-gradient-to-r from-transparent via-amber-400/40 to-transparent" />
+              <div className="flex items-center gap-2.5">
+                <span className="material-symbols-outlined text-[20px] text-amber-400">
+                  psychology
+                </span>
+                <span className="text-[13px] font-bold uppercase tracking-[0.15em] text-slate-300">
+                  Cum funcționează — 6 Algoritmi
+                </span>
               </div>
+              <div className="h-px flex-1 bg-gradient-to-r from-transparent via-amber-400/40 to-transparent" />
+            </div>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+              {[
+                {
+                  icon: "auto_awesome",
+                  color: "text-[#2DD4BF]",
+                  bg: "bg-[#2DD4BF]/5 border-[#2DD4BF]/15",
+                  content: (
+                    <>
+                      <span className="font-semibold text-[#2DD4BF]">
+                        Cosine Similarity
+                      </span>{" "}
+                      — Calculează similaritatea direcțională ponderată între
+                      vectorul tău de preferințe și scorurile fiecărei mașini.
+                      Măsoară <em>direcția</em> preferinței, nu magnitudinea.
+                    </>
+                  ),
+                },
+                {
+                  icon: "scatter_plot",
+                  color: "text-[#895af6]",
+                  bg: "bg-[#895af6]/5 border-[#895af6]/15",
+                  content: (
+                    <>
+                      <span className="font-semibold text-[#895af6]">
+                        ACP (Componente Principale)
+                      </span>{" "}
+                      — Reduce dimensionalitatea celor {criterii.length}{" "}
+                      criterii la 2 componente principale, vizualizând mașinile
+                      într-un spațiu 2D. Include Scree Plot și cercul
+                      corelațiilor.
+                    </>
+                  ),
+                },
+                {
+                  icon: "account_tree",
+                  color: "text-[#D4AF37]",
+                  bg: "bg-[#D4AF37]/5 border-[#D4AF37]/15",
+                  content: (
+                    <>
+                      <span className="font-semibold text-[#D4AF37]">
+                        AC (Clustering Ierarhic)
+                      </span>{" "}
+                      — Grupează mașinile în clustere similare folosind metoda
+                      Ward. Identifică grupul cel mai compatibil cu profilul tău
+                      și afișează indicii Silhouette.
+                    </>
+                  ),
+                },
+                {
+                  icon: "hub",
+                  color: "text-[#3b82f6]",
+                  bg: "bg-[#3b82f6]/5 border-[#3b82f6]/15",
+                  content: (
+                    <>
+                      <span className="font-semibold text-[#3b82f6]">
+                        K-Means Clustering
+                      </span>{" "}
+                      — Alternativă la HC cu determinare K optim prin Elbow
+                      Method. Compară calitatea partiției K-Means vs Ward,
+                      inclusiv radar centroizi și scatter PCA.
+                    </>
+                  ),
+                },
+                {
+                  icon: "warning",
+                  color: "text-[#ef4444]",
+                  bg: "bg-[#ef4444]/5 border-[#ef4444]/15",
+                  content: (
+                    <>
+                      <span className="font-semibold text-[#ef4444]">
+                        Anomaly Detection
+                      </span>{" "}
+                      — Detectează mașini sub- sau supraevaluate comparând
+                      calitatea generală vs. preț. Folosește Isolation Forest +
+                      Z-Score Value Ratio.
+                    </>
+                  ),
+                },
+                {
+                  icon: "fingerprint",
+                  color: "text-[#22c55e]",
+                  bg: "bg-[#22c55e]/5 border-[#22c55e]/15",
+                  content: (
+                    <>
+                      <span className="font-semibold text-[#22c55e]">
+                        Car DNA
+                      </span>{" "}
+                      — Amprenta completă pe 10 dimensiuni a fiecărei mașini,
+                      comparată vizual cu media flotei. Disponibilă pe pagina de
+                      detalii.
+                    </>
+                  ),
+                },
+              ].map((ins, i) => (
+                <div
+                  key={i}
+                  className={`flex items-start gap-3 rounded-xl p-4 border ${ins.bg}`}
+                >
+                  <span
+                    className={`material-symbols-outlined text-[24px] mt-0.5 shrink-0 ${ins.color}`}
+                  >
+                    {ins.icon}
+                  </span>
+                  <p className="text-sm text-slate-400 leading-relaxed">
+                    {ins.content}
+                  </p>
+                </div>
+              ))}
             </div>
           </div>
         </div>
@@ -729,6 +850,16 @@ function RecomandareAI() {
                     hub
                   </span>
                   Clusteri Ierarhici
+                </button>
+                <button
+                  onClick={() => setSubTab("kmeans")}
+                  className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-bold transition-all
+                                        ${subTab === "kmeans" ? "bg-[#3b82f6]/20 text-[#3b82f6]" : "text-slate-400 hover:text-white hover:bg-white/5"}`}
+                >
+                  <span className="material-symbols-outlined text-[18px]">
+                    bubble_chart
+                  </span>
+                  K-Means
                 </button>
               </div>
 
@@ -1399,6 +1530,784 @@ function RecomandareAI() {
                       </div>
                     </div>
                   )}
+                </div>
+              )}
+
+              {/* ──── SUB-TAB: K-MEANS ──── */}
+              {subTab === "kmeans" && kmeansData && (
+                <div className="space-y-10">
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="size-10 rounded-lg bg-[#3b82f6]/10 flex items-center justify-center">
+                      <span className="material-symbols-outlined text-[#3b82f6]">
+                        bubble_chart
+                      </span>
+                    </div>
+                    <div>
+                      <h2 className="text-xl font-bold text-white">
+                        K-Means Clustering
+                      </h2>
+                      <p className="text-xs text-slate-400">
+                        Clustering non-ierarhic cu determinare automată a K
+                        optim – comparație cu Ward HC
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Global KPIs */}
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="glass-panel rounded-xl p-4 text-center">
+                      <p className="text-3xl font-bold text-[#3b82f6]">
+                        {kmeansData.nrClusteri}
+                      </p>
+                      <p className="text-xs text-slate-400 mt-1">K Optim</p>
+                      <p className="text-[10px] text-slate-500">
+                        Silhouette max
+                      </p>
+                    </div>
+                    <div className="glass-panel rounded-xl p-4 text-center">
+                      <p className="text-3xl font-bold text-[#2DD4BF]">
+                        {kmeansData.silhouetteGlobal}
+                      </p>
+                      <p className="text-xs text-slate-400 mt-1">
+                        Silhouette Global
+                      </p>
+                    </div>
+                    <div className="glass-panel rounded-xl p-4 text-center">
+                      <p className="text-3xl font-bold text-[#895af6]">
+                        {kmeansData.kOptimalElbow}
+                      </p>
+                      <p className="text-xs text-slate-400 mt-1">K (Elbow)</p>
+                      <p className="text-[10px] text-slate-500">
+                        derivata a 2-a
+                      </p>
+                    </div>
+                    <div className="glass-panel rounded-xl p-4 text-center">
+                      <p className="text-3xl font-bold text-[#D4AF37]">
+                        {kmeansData.kOptimalSilhouette}
+                      </p>
+                      <p className="text-xs text-slate-400 mt-1">
+                        K (Silhouette)
+                      </p>
+                      <p className="text-[10px] text-slate-500">scor maxim</p>
+                    </div>
+                  </div>
+
+                  {/* User cluster */}
+                  <div className="bg-[#3b82f6]/5 rounded-xl p-5 border border-[#3b82f6]/20 flex items-center gap-4">
+                    <div className="size-14 rounded-xl bg-[#3b82f6]/10 flex items-center justify-center shrink-0">
+                      <span className="material-symbols-outlined text-[#3b82f6] text-3xl">
+                        person_pin
+                      </span>
+                    </div>
+                    <div>
+                      <p className="text-lg font-bold text-white">
+                        Aparții clusterului:{" "}
+                        <span className="text-[#3b82f6]">
+                          {kmeansData.userClusterLabel}
+                        </span>
+                      </p>
+                      <p className="text-xs text-slate-400">
+                        K-Means te-a asignat bazat pe distanța euclidiană la
+                        centroizii celor {kmeansData.nrClusteri} clustere.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Comparație HC vs K-Means */}
+                  {kmeansData.comparatie && (
+                    <div className="glass-panel rounded-2xl p-6 space-y-4">
+                      <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
+                        <span className="material-symbols-outlined text-[16px]">
+                          compare
+                        </span>
+                        Comparație: Ward HC vs K-Means
+                      </h3>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="bg-[#D4AF37]/5 rounded-xl p-4 border border-[#D4AF37]/10 text-center">
+                          <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">
+                            Ward HC ({kmeansData.comparatie.hcClusters}{" "}
+                            clustere)
+                          </p>
+                          <p className="text-2xl font-bold text-[#D4AF37]">
+                            {kmeansData.comparatie.hcSilhouette}
+                          </p>
+                          <p className="text-[10px] text-slate-500">
+                            Silhouette
+                          </p>
+                        </div>
+                        <div className="bg-[#3b82f6]/5 rounded-xl p-4 border border-[#3b82f6]/10 text-center">
+                          <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">
+                            K-Means ({kmeansData.comparatie.kmClusters}{" "}
+                            clustere)
+                          </p>
+                          <p className="text-2xl font-bold text-[#3b82f6]">
+                            {kmeansData.comparatie.kmSilhouette}
+                          </p>
+                          <p className="text-[10px] text-slate-500">
+                            Silhouette
+                          </p>
+                        </div>
+                        <div className="bg-white/5 rounded-xl p-4 border border-white/10 text-center flex flex-col justify-center">
+                          <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">
+                            Câștigător
+                          </p>
+                          <p className="text-lg font-bold text-[#2DD4BF]">
+                            {kmeansData.comparatie.winner}
+                          </p>
+                          <p className="text-[10px] text-slate-500">
+                            La K respectiv al fiecăruia
+                          </p>
+                        </div>
+                      </div>
+                      <div className="bg-[#3b82f6]/5 rounded-lg p-3 border border-[#3b82f6]/10">
+                        <p className="text-[11px] text-slate-400 leading-relaxed">
+                          <span className="text-[#3b82f6] font-bold">
+                            📊 La aceeași K={kmeansData.comparatie.hcClusters}:
+                          </span>{" "}
+                          K-Means Sil={kmeansData.comparatie.kmAtHcK_Sil} vs HC
+                          Sil={kmeansData.comparatie.hcSilhouette}→{" "}
+                          <strong className="text-white">
+                            {kmeansData.comparatie.winnerAtSameK}
+                          </strong>{" "}
+                          produce partiții mai compacte.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Cluster cards */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {kmeansData.clusters?.map((cluster) => (
+                      <div
+                        key={cluster.id}
+                        className={`glass-panel rounded-2xl p-5 space-y-4 transition-all
+                          ${cluster.isUserCluster ? "ring-2 ring-[#3b82f6]/40 bg-[#3b82f6]/[0.03]" : ""}`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <div
+                              className="size-10 rounded-lg flex items-center justify-center"
+                              style={{ backgroundColor: cluster.color + "20" }}
+                            >
+                              <span
+                                className="material-symbols-outlined text-xl"
+                                style={{ color: cluster.color }}
+                              >
+                                bubble_chart
+                              </span>
+                            </div>
+                            <div>
+                              <h3 className="text-sm font-bold text-white">
+                                {cluster.label}
+                              </h3>
+                              <p className="text-[10px] text-slate-500">
+                                {cluster.count} mașini
+                              </p>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <p
+                              className="text-sm font-bold"
+                              style={{ color: cluster.color }}
+                            >
+                              Sil: {cluster.silhouette}
+                            </p>
+                            {cluster.isUserCluster && (
+                              <span className="text-[10px] text-[#3b82f6] font-bold">
+                                ✓ CLUSTER-UL TĂU
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <ClusterProfile
+                          profile={cluster.profile}
+                          activeKeys={activeKeys}
+                          color={cluster.color}
+                        />
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* ── Grafice K-Means ── */}
+                  {kmeansData.charts?.elbow && (
+                    <div className="glass-panel rounded-2xl p-8">
+                      <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-6 flex items-center gap-2">
+                        <span className="material-symbols-outlined text-[16px]">
+                          show_chart
+                        </span>
+                        Elbow Plot – Inerție & Silhouette vs K
+                      </h3>
+                      <div className="flex justify-center py-4">
+                        <img
+                          src={`data:image/png;base64,${kmeansData.charts.elbow}`}
+                          alt="Elbow Plot"
+                          className="w-full max-w-[800px] rounded-xl shadow-lg shadow-black/20"
+                        />
+                      </div>
+                      <div className="mt-6 space-y-3">
+                        <div className="bg-[#3b82f6]/5 rounded-lg p-4 border border-[#3b82f6]/10">
+                          <p className="text-xs text-slate-400 leading-relaxed">
+                            <span className="inline-flex items-center gap-1 text-[#3b82f6] font-bold mb-1">
+                              🔬 Tehnic:
+                            </span>{" "}
+                            Graficul arată inerția (WCSS – suma distanțelor
+                            intra-cluster) și coeficientul Silhouette pentru
+                            fiecare K de la 2 la 8. Punctul roșu marchează K
+                            optim ={" "}
+                            <strong className="text-white">
+                              {kmeansData.nrClusteri}
+                            </strong>
+                            . Metoda Elbow caută „cotul" unde scăderea inerției
+                            devine mai lentă.
+                          </p>
+                        </div>
+                        <div className="bg-[#2DD4BF]/5 rounded-lg p-4 border border-[#2DD4BF]/10">
+                          <p className="text-xs text-slate-400 leading-relaxed">
+                            <span className="inline-flex items-center gap-1 text-[#2DD4BF] font-bold mb-1">
+                              💡 Pe scurt:
+                            </span>{" "}
+                            Curba violet arată cât de „strânse" sunt grupurile —
+                            scade rapid la început, apoi se aplatizează. Punctul
+                            unde se oprește scăderea bruscă (cotul) = nr. optim
+                            de grupuri. Linia teal arată calitatea separării —
+                            mai sus = grupuri mai distincte.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                    {kmeansData.charts?.scatter && (
+                      <div className="glass-panel rounded-2xl p-8">
+                        <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-6 flex items-center gap-2">
+                          <span className="material-symbols-outlined text-[16px]">
+                            scatter_plot
+                          </span>
+                          Scatter PCA – Clustere K-Means
+                        </h3>
+                        <div className="flex justify-center py-3">
+                          <img
+                            src={`data:image/png;base64,${kmeansData.charts.scatter}`}
+                            alt="K-Means Scatter"
+                            className="w-full rounded-xl shadow-lg shadow-black/20"
+                          />
+                        </div>
+                        <div className="mt-6 space-y-3">
+                          <div className="bg-[#3b82f6]/5 rounded-lg p-4 border border-[#3b82f6]/10">
+                            <p className="text-[11px] text-slate-400 leading-relaxed">
+                              <span className="inline-flex items-center gap-1 text-[#3b82f6] font-bold mb-1">
+                                🔬 Tehnic:
+                              </span>{" "}
+                              Mașinile proiectate pe primele 2 componente
+                              principale (PCA), colorate după clusterul K-Means.
+                              Romburile = centroizii clusterelor. Steaua teal =
+                              preferințele tale. Componentele explică{" "}
+                              <strong className="text-white">
+                                {kmeansData.pcaExplained?.[0]}% +{" "}
+                                {kmeansData.pcaExplained?.[1]}%
+                              </strong>{" "}
+                              din varianță.
+                            </p>
+                          </div>
+                          <div className="bg-[#2DD4BF]/5 rounded-lg p-4 border border-[#2DD4BF]/10">
+                            <p className="text-[11px] text-slate-400 leading-relaxed">
+                              <span className="inline-flex items-center gap-1 text-[#2DD4BF] font-bold mb-1">
+                                💡 Pe scurt:
+                              </span>{" "}
+                              O hartă 2D a tuturor mașinilor, colorate pe
+                              grupuri. Romburile sunt „centrul" fiecărui grup.
+                              Steaua ești tu — grupul care te conține este cel
+                              mai compatibil cu gusturile tale.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                    {kmeansData.charts?.radarCentroids && (
+                      <div className="glass-panel rounded-2xl p-8">
+                        <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-6 flex items-center gap-2">
+                          <span className="material-symbols-outlined text-[16px]">
+                            target
+                          </span>
+                          Radar Centroizi K-Means
+                        </h3>
+                        <div className="flex justify-center py-3">
+                          <img
+                            src={`data:image/png;base64,${kmeansData.charts.radarCentroids}`}
+                            alt="Radar Centroizi"
+                            className="w-full rounded-xl shadow-lg shadow-black/20"
+                          />
+                        </div>
+                        <div className="mt-6 space-y-3">
+                          <div className="bg-[#3b82f6]/5 rounded-lg p-4 border border-[#3b82f6]/10">
+                            <p className="text-[11px] text-slate-400 leading-relaxed">
+                              <span className="inline-flex items-center gap-1 text-[#3b82f6] font-bold mb-1">
+                                🔬 Tehnic:
+                              </span>{" "}
+                              Radarul suprapune profilurile medii (centroizii)
+                              ale fiecărui cluster, cu preferințele tale (steaua
+                              teal cu linie punctată). Fiecare axă = media unui
+                              criteriu pe scara originală (0-10).
+                            </p>
+                          </div>
+                          <div className="bg-[#2DD4BF]/5 rounded-lg p-4 border border-[#2DD4BF]/10">
+                            <p className="text-[11px] text-slate-400 leading-relaxed">
+                              <span className="inline-flex items-center gap-1 text-[#2DD4BF] font-bold mb-1">
+                                💡 Pe scurt:
+                              </span>{" "}
+                              Fiecare formă colorată = „personalitatea" unui
+                              grup de mașini. Linia ta punctată arată ce cauți —
+                              grupul cu forma cea mai asemănătoare cu a ta e cel
+                              mai potrivit.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {kmeansData.charts?.silhouette && (
+                    <div className="glass-panel rounded-2xl p-8">
+                      <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-6 flex items-center gap-2">
+                        <span className="material-symbols-outlined text-[16px]">
+                          equalizer
+                        </span>
+                        Silhouette Plot – K-Means
+                      </h3>
+                      <div className="flex justify-center py-3">
+                        <img
+                          src={`data:image/png;base64,${kmeansData.charts.silhouette}`}
+                          alt="K-Means Silhouette"
+                          className="w-full max-w-[800px] rounded-xl shadow-lg shadow-black/20"
+                        />
+                      </div>
+                      <div className="mt-6 space-y-3">
+                        <div className="bg-[#3b82f6]/5 rounded-lg p-4 border border-[#3b82f6]/10">
+                          <p className="text-xs text-slate-400 leading-relaxed">
+                            <span className="inline-flex items-center gap-1 text-[#3b82f6] font-bold mb-1">
+                              🔬 Tehnic:
+                            </span>{" "}
+                            Identic cu Silhouette Plot-ul HC, dar pe clustere
+                            K-Means. Media globală:{" "}
+                            <strong className="text-white">
+                              {kmeansData.silhouetteGlobal}
+                            </strong>
+                            . Compară cu HC Silhouette pentru a vedea care
+                            partiție produce grupuri mai compacte.
+                          </p>
+                        </div>
+                        <div className="bg-[#2DD4BF]/5 rounded-lg p-4 border border-[#2DD4BF]/10">
+                          <p className="text-xs text-slate-400 leading-relaxed">
+                            <span className="inline-flex items-center gap-1 text-[#2DD4BF] font-bold mb-1">
+                              💡 Pe scurt:
+                            </span>{" "}
+                            Barele arată cât de bine „se simte" fiecare mașină
+                            în grupul ei. Cu cât e mai uniform și lung, cu atât
+                            K-Means a făcut o treabă mai bună.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Cars in user's KMeans cluster */}
+                  {kmeansData.cars && (
+                    <div className="glass-panel rounded-2xl overflow-hidden">
+                      <div className="p-4 border-b border-white/10 flex items-center justify-between">
+                        <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider">
+                          Mașini din Clusterul Tău (
+                          {kmeansData.userClusterLabel})
+                        </h3>
+                      </div>
+                      <div className="divide-y divide-white/5">
+                        {kmeansData.cars
+                          .filter((c) => c.cluster === kmeansData.userCluster)
+                          .map((masina, idx) => (
+                            <div
+                              key={masina.idMasina}
+                              className="flex items-center gap-5 p-4 hover:bg-white/[0.02] transition group"
+                            >
+                              <span
+                                className="text-sm font-bold w-6 text-center"
+                                style={{ color: masina.clusterColor }}
+                              >
+                                #{idx + 1}
+                              </span>
+                              <div
+                                className="size-14 rounded-lg bg-cover bg-center shrink-0"
+                                style={{
+                                  backgroundImage: `url('${masina.imagine}')`,
+                                }}
+                              ></div>
+                              <div className="flex-1 min-w-0">
+                                <h4 className="text-sm font-bold text-white group-hover:text-[#3b82f6] transition truncate">
+                                  {masina.marca} {masina.model}
+                                </h4>
+                                <p className="text-xs text-slate-500">
+                                  {masina.an} · {masina.km?.toLocaleString()} km
+                                  · {combustibilMap[masina.combustibil]}
+                                </p>
+                              </div>
+                              <span className="text-lg font-bold text-[#D4AF37] font-mono hidden sm:block">
+                                €{masina.pret?.toLocaleString()}
+                              </span>
+                              <span
+                                className="text-[10px] px-2 py-1 rounded-full font-bold"
+                                style={{
+                                  backgroundColor: masina.clusterColor + "20",
+                                  color: masina.clusterColor,
+                                }}
+                              >
+                                Sil: {masina.silhouette}
+                              </span>
+                              <button
+                                onClick={() =>
+                                  navigate(`/client/masina/${masina.idMasina}`)
+                                }
+                                className="text-xs px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 transition hidden sm:block"
+                              >
+                                Detalii
+                              </button>
+                            </div>
+                          ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── TAB 3: Anomaly Detection ── */}
+          {activeTab === "anomaly" && anomalyData && (
+            <div className="space-y-6">
+              <div className="flex items-center gap-3 mb-2">
+                <div className="size-10 rounded-lg bg-[#22c55e]/10 flex items-center justify-center">
+                  <span className="material-symbols-outlined text-[#22c55e]">
+                    local_offer
+                  </span>
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-white">
+                    Anomaly Detection – Chilipiruri & Supraevaluate
+                  </h2>
+                  <p className="text-xs text-slate-400">
+                    Isolation Forest + Z-Score Value Ratio pe{" "}
+                    {anomalyData.totalCars} mașini
+                  </p>
+                </div>
+              </div>
+
+              {/* Info banner */}
+              <div className="bg-[#22c55e]/5 rounded-xl p-4 border border-[#22c55e]/20 flex items-start gap-3">
+                <span className="material-symbols-outlined text-[#22c55e] text-xl mt-0.5">
+                  psychology
+                </span>
+                <div>
+                  <p className="text-sm font-bold text-[#22c55e] mb-1">
+                    Cum funcționează?
+                  </p>
+                  <p className="text-xs text-slate-400 leading-relaxed">
+                    Algoritmul Isolation Forest izolează punctele atipice
+                    (anomalii) dintr-un set de date construind arbori de decizie
+                    aleatori. Mașinile izolate rapid = anomalii. Apoi, Z-Score
+                    Value Ratio compară calitatea generală (media criteriilor)
+                    cu prețul normalizat — un ratio pozitiv mare ={" "}
+                    <strong className="text-[#22c55e]">chilipir</strong>{" "}
+                    (calitate bună, preț mic), un ratio negativ mare ={" "}
+                    <strong className="text-[#ef4444]">supraevaluată</strong>{" "}
+                    (preț mare, calitate sub așteptări).
+                  </p>
+                </div>
+              </div>
+
+              {/* KPIs */}
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                <div className="glass-panel rounded-xl p-4 text-center">
+                  <p className="text-3xl font-bold text-[#22c55e]">
+                    {anomalyData.nChilipir}
+                  </p>
+                  <p className="text-xs text-slate-400 mt-1">Chilipiruri</p>
+                  <p className="text-[10px] text-[#22c55e]">calitate/preț ↑</p>
+                </div>
+                <div className="glass-panel rounded-xl p-4 text-center">
+                  <p className="text-3xl font-bold text-[#ef4444]">
+                    {anomalyData.nSupraevaluat}
+                  </p>
+                  <p className="text-xs text-slate-400 mt-1">Supraevaluate</p>
+                  <p className="text-[10px] text-[#ef4444]">preț/calitate ↑</p>
+                </div>
+                <div className="glass-panel rounded-xl p-4 text-center">
+                  <p className="text-3xl font-bold text-[#f59e0b]">
+                    {anomalyData.nOutlier}
+                  </p>
+                  <p className="text-xs text-slate-400 mt-1">Outliers</p>
+                  <p className="text-[10px] text-[#f59e0b]">atipice</p>
+                </div>
+                <div className="glass-panel rounded-xl p-4 text-center">
+                  <p className="text-3xl font-bold text-white">
+                    {anomalyData.avgQuality}
+                  </p>
+                  <p className="text-xs text-slate-400 mt-1">Quality Mediu</p>
+                  <p className="text-[10px] text-slate-500">din 10</p>
+                </div>
+                <div className="glass-panel rounded-xl p-4 text-center">
+                  <p className="text-3xl font-bold text-[#D4AF37]">
+                    €{Math.round(anomalyData.medianPrice / 1000)}k
+                  </p>
+                  <p className="text-xs text-slate-400 mt-1">Preț Median</p>
+                  <p className="text-[10px] text-slate-500">flotă</p>
+                </div>
+              </div>
+
+              {/* Anomaly car cards */}
+              {anomalyData.cars?.filter((c) => c.anomalyType !== "normal")
+                .length > 0 && (
+                <div className="space-y-4">
+                  <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
+                    <span className="material-symbols-outlined text-[16px]">
+                      flag
+                    </span>
+                    Mașini Detectate ca Anomalii
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {anomalyData.cars
+                      .filter((c) => c.anomalyType !== "normal")
+                      .map((masina) => (
+                        <div
+                          key={masina.idMasina}
+                          className={`glass-panel rounded-2xl overflow-hidden group hover:border-white/20 transition-all
+                          ${
+                            masina.anomalyType === "chilipir"
+                              ? "ring-1 ring-[#22c55e]/30"
+                              : masina.anomalyType === "supraevaluat"
+                                ? "ring-1 ring-[#ef4444]/30"
+                                : "ring-1 ring-[#f59e0b]/30"
+                          }`}
+                        >
+                          <div className="flex items-stretch">
+                            <div
+                              className="w-28 shrink-0 bg-cover bg-center"
+                              style={{
+                                backgroundImage: `url('${masina.imagine}')`,
+                              }}
+                            ></div>
+                            <div className="flex-1 p-4 space-y-2">
+                              <div className="flex items-center justify-between gap-2">
+                                <h4 className="text-sm font-bold text-white truncate">
+                                  {masina.marca} {masina.model}
+                                </h4>
+                                <span
+                                  className="text-[10px] px-2.5 py-1 rounded-full font-bold shrink-0"
+                                  style={{
+                                    backgroundColor: masina.anomalyColor + "20",
+                                    color: masina.anomalyColor,
+                                  }}
+                                >
+                                  {masina.anomalyLabel}
+                                </span>
+                              </div>
+                              <p className="text-xs text-slate-500">
+                                {masina.an} · {masina.km?.toLocaleString()} km ·{" "}
+                                {combustibilMap[masina.combustibil]}
+                              </p>
+                              <div className="flex items-center gap-4">
+                                <div>
+                                  <p className="text-[10px] text-slate-500">
+                                    Preț
+                                  </p>
+                                  <p className="text-sm font-bold text-[#D4AF37]">
+                                    €{masina.pret?.toLocaleString()}
+                                  </p>
+                                </div>
+                                <div>
+                                  <p className="text-[10px] text-slate-500">
+                                    Quality
+                                  </p>
+                                  <p className="text-sm font-bold text-[#2DD4BF]">
+                                    {masina.qualityScore}/10
+                                  </p>
+                                </div>
+                                <div>
+                                  <p className="text-[10px] text-slate-500">
+                                    Value Ratio
+                                  </p>
+                                  <p
+                                    className={`text-sm font-bold ${masina.valueRatio > 0 ? "text-[#22c55e]" : "text-[#ef4444]"}`}
+                                  >
+                                    {masina.valueRatio > 0 ? "+" : ""}
+                                    {masina.valueRatio}
+                                  </p>
+                                </div>
+                              </div>
+                              <button
+                                onClick={() =>
+                                  navigate(`/client/masina/${masina.idMasina}`)
+                                }
+                                className="text-xs px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 transition flex items-center gap-1 w-fit"
+                              >
+                                <span className="material-symbols-outlined text-[14px]">
+                                  visibility
+                                </span>{" "}
+                                Detalii
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              )}
+
+              {/* ── Grafice Anomaly ── */}
+              {anomalyData.charts?.scatterQualityPrice && (
+                <div className="glass-panel rounded-2xl p-8">
+                  <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-6 flex items-center gap-2">
+                    <span className="material-symbols-outlined text-[16px]">
+                      scatter_plot
+                    </span>
+                    Scatter – Calitate vs. Preț
+                  </h3>
+                  <div className="flex justify-center py-4">
+                    <img
+                      src={`data:image/png;base64,${anomalyData.charts.scatterQualityPrice}`}
+                      alt="Quality vs Price"
+                      className="w-full max-w-[900px] rounded-xl shadow-lg shadow-black/20"
+                    />
+                  </div>
+                  <div className="mt-6 space-y-3">
+                    <div className="bg-[#22c55e]/5 rounded-lg p-4 border border-[#22c55e]/10">
+                      <p className="text-xs text-slate-400 leading-relaxed">
+                        <span className="inline-flex items-center gap-1 text-[#22c55e] font-bold mb-1">
+                          🔬 Tehnic:
+                        </span>{" "}
+                        Fiecare punct = o mașină. Axa X = prețul, axa Y = scorul
+                        de calitate mediu. Diamantele verzi = chilipiruri
+                        (calitate peste linia trendului la preț mic).
+                        Triunghiurile roșii = supraevaluate. Linia punctată
+                        violet = trendul liniar calitate-preț.
+                      </p>
+                    </div>
+                    <div className="bg-[#2DD4BF]/5 rounded-lg p-4 border border-[#2DD4BF]/10">
+                      <p className="text-xs text-slate-400 leading-relaxed">
+                        <span className="inline-flex items-center gap-1 text-[#2DD4BF] font-bold mb-1">
+                          💡 Pe scurt:
+                        </span>{" "}
+                        Punctele verzi sunt mașini cu un raport calitate/preț
+                        excelent — „best deals" din flotă. Punctele roșii sunt
+                        mașini care costă mai mult decât ar justifica calitatea
+                        lor. Cele neutre sunt în intervalul normal.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                {anomalyData.charts?.valueRatioDistribution && (
+                  <div className="glass-panel rounded-2xl p-8">
+                    <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-6 flex items-center gap-2">
+                      <span className="material-symbols-outlined text-[16px]">
+                        show_chart
+                      </span>
+                      Value Ratio Distribution
+                    </h3>
+                    <div className="flex justify-center py-3">
+                      <img
+                        src={`data:image/png;base64,${anomalyData.charts.valueRatioDistribution}`}
+                        alt="Value Ratio"
+                        className="w-full rounded-xl shadow-lg shadow-black/20"
+                      />
+                    </div>
+                    <div className="mt-6 space-y-3">
+                      <div className="bg-[#22c55e]/5 rounded-lg p-4 border border-[#22c55e]/10">
+                        <p className="text-[11px] text-slate-400 leading-relaxed">
+                          <span className="inline-flex items-center gap-1 text-[#22c55e] font-bold mb-1">
+                            🔬 Tehnic:
+                          </span>{" "}
+                          Value Ratio = Z(quality) − Z(preț). Puncte deasupra
+                          pragului verde sunt chilipiruri, sub pragul roșu sunt
+                          supraevaluate. Isolation Forest marchează anomaliile
+                          independent de ratio.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                {anomalyData.charts?.boxPlotCriteria && (
+                  <div className="glass-panel rounded-2xl p-8">
+                    <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-6 flex items-center gap-2">
+                      <span className="material-symbols-outlined text-[16px]">
+                        candlestick_chart
+                      </span>
+                      Box Plot – Criteriile per Tip
+                    </h3>
+                    <div className="flex justify-center py-3">
+                      <img
+                        src={`data:image/png;base64,${anomalyData.charts.boxPlotCriteria}`}
+                        alt="Box Plot"
+                        className="w-full rounded-xl shadow-lg shadow-black/20"
+                      />
+                    </div>
+                    <div className="mt-6 space-y-3">
+                      <div className="bg-[#22c55e]/5 rounded-lg p-4 border border-[#22c55e]/10">
+                        <p className="text-[11px] text-slate-400 leading-relaxed">
+                          <span className="inline-flex items-center gap-1 text-[#22c55e] font-bold mb-1">
+                            💡 Pe scurt:
+                          </span>{" "}
+                          Compară scorurile pe fiecare criteriu între mașinile
+                          chilipir, normale și supraevaluate. Chilipirurile tind
+                          să aibă scoruri mari la mai multe criterii, în ciuda
+                          prețului redus.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {anomalyData.charts?.isoScoreDistribution && (
+                <div className="glass-panel rounded-2xl p-8">
+                  <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-6 flex items-center gap-2">
+                    <span className="material-symbols-outlined text-[16px]">
+                      forest
+                    </span>
+                    Isolation Forest – Distribuția Scorurilor
+                  </h3>
+                  <div className="flex justify-center py-3">
+                    <img
+                      src={`data:image/png;base64,${anomalyData.charts.isoScoreDistribution}`}
+                      alt="Isolation Forest Scores"
+                      className="w-full max-w-[800px] rounded-xl shadow-lg shadow-black/20"
+                    />
+                  </div>
+                  <div className="mt-6 space-y-3">
+                    <div className="bg-[#22c55e]/5 rounded-lg p-4 border border-[#22c55e]/10">
+                      <p className="text-xs text-slate-400 leading-relaxed">
+                        <span className="inline-flex items-center gap-1 text-[#22c55e] font-bold mb-1">
+                          🔬 Tehnic:
+                        </span>{" "}
+                        Histograma scorurilor de anomalie ale Isolation Forest.
+                        Scoruri sub pragul roșu = anomalii detectate. Cu cât
+                        scorul e mai negativ, cu atât mașina e mai „atipică"
+                        față de restul flotei. Contamination ratio setat la 15%
+                        din total.
+                      </p>
+                    </div>
+                    <div className="bg-[#2DD4BF]/5 rounded-lg p-4 border border-[#2DD4BF]/10">
+                      <p className="text-xs text-slate-400 leading-relaxed">
+                        <span className="inline-flex items-center gap-1 text-[#2DD4BF] font-bold mb-1">
+                          💡 Pe scurt:
+                        </span>{" "}
+                        Mașinile „normale" sunt grupate în partea dreaptă (scor
+                        mare). Cele diferite se separă spre stânga. E ca un
+                        filtru care izolează mașinile care „nu se potrivesc" cu
+                        restul — fie sunt prea ieftine pentru calitatea lor
+                        (chilipir!), fie prea scumpe.
+                      </p>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>

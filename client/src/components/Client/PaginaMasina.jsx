@@ -60,6 +60,20 @@ function PaginaMasina() {
   const [searchParams] = useSearchParams();
   const { user } = useSelector((state) => state.auth);
   const isDirector = user?.rol === "Director";
+  const userId = user?.idUtilizator;
+
+  // Check if user completed at least one AI test
+  const getAiTestScores = () => {
+    try {
+      const raw = localStorage.getItem(`aiMatchScores_${userId}`);
+      if (!raw) return null;
+      return JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  };
+  const [aiTestScores, setAiTestScores] = useState(() => getAiTestScores());
+  const hasAiTest = aiTestScores !== null;
 
   const [masina, setMasina] = useState(null);
   const [masiniSimilare, setMasiniSimilare] = useState([]);
@@ -95,9 +109,29 @@ function PaginaMasina() {
   const [tipPlata, setTipPlata] = useState("Cash");
   const [cumparaSubmitted, setCumparaSubmitted] = useState(false);
   const [cumparaStep, setCumparaStep] = useState(1); // 1 = select payment, 2 = warning confirm
+  const [dnaData, setDnaData] = useState(null);
+  const [dnaLoading, setDnaLoading] = useState(false);
+  const [dnaOpen, setDnaOpen] = useState(false);
+
+  const fetchDNA = async () => {
+    if (dnaData) {
+      setDnaOpen(true);
+      return;
+    }
+    setDnaLoading(true);
+    try {
+      const res = await apiPost("/ai/fingerprint", { idMasina: Number(id) });
+      setDnaData(res);
+      setDnaOpen(true);
+    } catch (e) {
+      console.error("DNA fetch error", e);
+    } finally {
+      setDnaLoading(false);
+    }
+  };
 
   useEffect(() => {
-    if (showTestDrive || showDiscount || showPDF || showCumpara) {
+    if (showTestDrive || showDiscount || showPDF || showCumpara || dnaOpen) {
       document.body.style.overflow = "hidden";
     } else {
       document.body.style.overflow = "";
@@ -105,7 +139,7 @@ function PaginaMasina() {
     return () => {
       document.body.style.overflow = "";
     };
-  }, [showTestDrive, showDiscount, showPDF, showCumpara]);
+  }, [showTestDrive, showDiscount, showPDF, showCumpara, dnaOpen]);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -116,8 +150,12 @@ function PaginaMasina() {
           apiGet("/api/masini"),
         ]);
 
-        // Enrich car data
-        car.aiMatch = computeAiMatch(car);
+        // Enrich car data – only set aiMatch when user has completed AI test
+        const freshScores = getAiTestScores();
+        setAiTestScores(freshScores);
+        car.aiMatch = freshScores
+          ? (freshScores[car.idMasina] ?? computeAiMatch(car))
+          : 0;
         car.imagine = getImagine(car);
         car.radarScores = getRadarScores(car);
         car.combustibilText = combustibilMap[car.combustibil] || "—";
@@ -639,7 +677,7 @@ ${
               {/* Overlay Controls & Badges */}
               <div className="absolute inset-0 flex flex-col justify-between p-6 lg:p-12 max-w-[1440px] mx-auto w-full">
                 {/* Top Badges */}
-                <div className="flex flex-wrap gap-3 mt-4">
+                <div className="flex flex-wrap gap-3 mt-4 items-center">
                   <div
                     className={`glass-panel px-4 py-1.5 rounded-full flex items-center gap-2 border-l-4 ${statusBadge.bg}`}
                     style={{ borderLeftColor: statusBadge.color }}
@@ -662,6 +700,33 @@ ${
                         %
                       </span>
                     </div>
+                  )}
+
+                  {/* Wishlist Heart — doar client */}
+                  {!isDirector && (
+                    <button
+                      onClick={toggleWishlist}
+                      className={`ml-auto size-12 rounded-full flex items-center justify-center backdrop-blur-md border transition-all duration-300 shadow-lg ${
+                        inWishlist
+                          ? "bg-[#fb7185]/20 border-[#fb7185]/40 shadow-[#fb7185]/20 scale-110"
+                          : "bg-white/10 border-white/20 hover:bg-[#fb7185]/10 hover:border-[#fb7185]/30"
+                      }`}
+                      title={
+                        inWishlist
+                          ? "Elimină din Wishlist"
+                          : "Adaugă la Wishlist"
+                      }
+                    >
+                      <span
+                        className={`material-symbols-outlined text-2xl transition-colors ${
+                          inWishlist
+                            ? "text-[#fb7185]"
+                            : "text-white/70 hover:text-[#fb7185]"
+                        }`}
+                      >
+                        {inWishlist ? "favorite" : "favorite_border"}
+                      </span>
+                    </button>
                   )}
                 </div>
 
@@ -736,7 +801,7 @@ ${
           <div className="lg:col-span-8 flex flex-col gap-8">
             {/* Title & Rating */}
             <div className="flex flex-col gap-2">
-              {!isDirector && (
+              {!isDirector && hasAiTest && (
                 <div className="flex items-center gap-2 mb-1">
                   <div className="flex text-[#D4AF37] text-sm">
                     {Array.from({ length: 5 }, (_, i) => (
@@ -888,7 +953,7 @@ ${
           {/* Right Column */}
           <div className="lg:col-span-4 flex flex-col gap-6">
             {/* AI Match Card */}
-            {!isDirector && (
+            {!isDirector && hasAiTest && (
               <div className="glass-panel p-6 rounded-2xl relative overflow-hidden">
                 <div className="absolute top-0 right-0 p-3 opacity-20">
                   <span className="material-symbols-outlined text-6xl text-[#2DD4BF]">
@@ -992,6 +1057,83 @@ ${
                     Modifică Preferințele tale
                   </a>
                 </div>
+              </div>
+            )}
+
+            {/* AI Match Card – no test yet */}
+            {!isDirector && !hasAiTest && (
+              <div className="glass-panel p-6 rounded-2xl relative overflow-hidden">
+                <div className="absolute top-0 right-0 p-3 opacity-10">
+                  <span className="material-symbols-outlined text-6xl text-slate-500">
+                    auto_awesome
+                  </span>
+                </div>
+                <h3 className="font-bold text-lg flex items-center gap-2 mb-4">
+                  <span className="size-2 rounded-full bg-slate-500"></span>
+                  AerYan AI Match
+                </h3>
+                <div className="flex flex-col items-center gap-4 text-center">
+                  <div className="relative size-24 flex items-center justify-center">
+                    <svg className="size-full -rotate-90" viewBox="0 0 100 100">
+                      <circle
+                        cx="50"
+                        cy="50"
+                        r="45"
+                        fill="none"
+                        stroke="#2e2249"
+                        strokeWidth="8"
+                      />
+                    </svg>
+                    <div className="absolute flex flex-col items-center">
+                      <span className="material-symbols-outlined text-slate-600 text-3xl">
+                        lock
+                      </span>
+                    </div>
+                  </div>
+                  <p className="text-sm text-slate-400 leading-relaxed">
+                    Completează testul AI pentru a vedea scorul de
+                    compatibilitate al acestei mașini cu preferințele tale.
+                  </p>
+                  <button
+                    onClick={() => navigate("/client/recomandare-ai")}
+                    className="flex items-center gap-2 bg-[#2DD4BF]/15 hover:bg-[#2DD4BF]/25 text-[#2DD4BF] px-5 py-2.5 rounded-xl font-semibold text-sm transition-colors border border-[#2DD4BF]/20"
+                  >
+                    <span className="material-symbols-outlined text-[18px]">
+                      psychology
+                    </span>
+                    Începe Testul AI
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* ── Car DNA ── */}
+            {!isDirector && (
+              <div className="glass-panel rounded-2xl overflow-hidden">
+                <button
+                  onClick={fetchDNA}
+                  disabled={dnaLoading}
+                  className="w-full p-5 flex items-center justify-between hover:bg-white/[0.02] transition group"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="size-10 rounded-lg bg-[#895af6]/10 flex items-center justify-center">
+                      <span className="material-symbols-outlined text-[#895af6] text-xl">
+                        {dnaLoading ? "hourglass_top" : "fingerprint"}
+                      </span>
+                    </div>
+                    <div className="text-left">
+                      <h3 className="font-bold text-sm text-white group-hover:text-[#895af6] transition">
+                        Car DNA
+                      </h3>
+                      <p className="text-[10px] text-slate-500">
+                        Amprentă completă — 10 scoruri vs. flotă
+                      </p>
+                    </div>
+                  </div>
+                  <span className="material-symbols-outlined text-slate-500 group-hover:text-[#895af6] transition">
+                    {dnaLoading ? "progress_activity" : "open_in_full"}
+                  </span>
+                </button>
               </div>
             )}
 
@@ -1887,6 +2029,277 @@ ${
                 </span>
                 Printează / Salvează PDF
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ==================== Car DNA Lightbox Modal ==================== */}
+      {dnaOpen && dnaData && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+            onClick={() => setDnaOpen(false)}
+          />
+          <div className="relative glass-panel rounded-2xl w-full max-w-4xl max-h-[92vh] overflow-y-auto border border-[#895af6]/20 shadow-2xl shadow-[#895af6]/10">
+            {/* Header */}
+            <div className="sticky top-0 z-10 bg-[#151022]/95 backdrop-blur-md border-b border-white/10 p-6 flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className="size-12 rounded-xl bg-[#895af6]/15 flex items-center justify-center">
+                  <span className="material-symbols-outlined text-[#895af6] text-2xl">
+                    fingerprint
+                  </span>
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-white">
+                    Car DNA — {masina.marca} {masina.model}
+                  </h2>
+                  <p className="text-sm text-slate-400 mt-0.5">
+                    Analiza amprentei complete pe 10 dimensiuni, comparată cu
+                    media întregii flote AerYan
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setDnaOpen(false)}
+                className="size-10 rounded-full hover:bg-white/10 flex items-center justify-center transition"
+              >
+                <span className="material-symbols-outlined text-slate-400 hover:text-white">
+                  close
+                </span>
+              </button>
+            </div>
+
+            <div className="p-6 space-y-8">
+              {/* Intro explanation */}
+              <div className="bg-[#895af6]/5 rounded-xl p-5 border border-[#895af6]/15">
+                <div className="flex items-start gap-3">
+                  <span className="material-symbols-outlined text-[#895af6] text-xl mt-0.5 shrink-0">
+                    info
+                  </span>
+                  <div className="text-sm text-slate-300 leading-relaxed">
+                    <p className="font-semibold text-white mb-1">
+                      Ce este Car DNA?
+                    </p>
+                    <p>
+                      Fiecare mașină din flota AerYan este evaluată pe{" "}
+                      <strong className="text-[#895af6]">10 dimensiuni</strong>{" "}
+                      (Viteză, Confort, Consum, Manevrabilitate, Preț, Design
+                      Interior, Design Exterior, Spațiu, Accelerație/Cuplu,
+                      Frânare). Car DNA-ul compară scorurile acestei mașini cu{" "}
+                      <strong className="text-[#D4AF37]">
+                        media generală a flotei
+                      </strong>
+                      , evidențiind punctele forte și cele de îmbunătățit.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Global Score + Strengths & Weaknesses */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                {/* Global Score */}
+                <div className="glass-panel rounded-xl p-5 flex flex-col items-center gap-3 border border-[#895af6]/20">
+                  <div className="relative size-24 flex items-center justify-center">
+                    <svg className="size-full -rotate-90" viewBox="0 0 100 100">
+                      <circle
+                        cx="50"
+                        cy="50"
+                        r="42"
+                        fill="none"
+                        stroke="#2e2249"
+                        strokeWidth="7"
+                      />
+                      <circle
+                        cx="50"
+                        cy="50"
+                        r="42"
+                        fill="none"
+                        stroke="#895af6"
+                        strokeWidth="7"
+                        strokeLinecap="round"
+                        strokeDasharray={2 * Math.PI * 42}
+                        strokeDashoffset={
+                          2 * Math.PI * 42 -
+                          (dnaData.globalScore / 10) * 2 * Math.PI * 42
+                        }
+                      />
+                    </svg>
+                    <span className="absolute text-2xl font-bold text-white">
+                      {dnaData.globalScore}
+                    </span>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-sm font-bold text-white">Scor Global</p>
+                    <p className="text-xs text-slate-400">
+                      Percentila{" "}
+                      <strong className="text-[#895af6]">
+                        {dnaData.percentiles?.global ?? "—"}%
+                      </strong>{" "}
+                      în flotă
+                    </p>
+                  </div>
+                </div>
+
+                {/* Strengths */}
+                <div className="glass-panel rounded-xl p-5 border border-[#22c55e]/15">
+                  <p className="text-xs font-bold text-[#22c55e] uppercase tracking-wider flex items-center gap-1.5 mb-3">
+                    <span className="material-symbols-outlined text-[16px]">
+                      trending_up
+                    </span>
+                    Puncte Forte
+                  </p>
+                  <div className="space-y-2.5">
+                    {dnaData.strengths?.map((s, i) => (
+                      <div
+                        key={i}
+                        className="flex items-center justify-between"
+                      >
+                        <span className="text-sm text-slate-300">
+                          {s.label}
+                        </span>
+                        <span className="text-sm font-bold text-[#22c55e]">
+                          {s.score}/10
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Weaknesses */}
+                <div className="glass-panel rounded-xl p-5 border border-[#ef4444]/15">
+                  <p className="text-xs font-bold text-[#ef4444] uppercase tracking-wider flex items-center gap-1.5 mb-3">
+                    <span className="material-symbols-outlined text-[16px]">
+                      trending_down
+                    </span>
+                    De Îmbunătățit
+                  </p>
+                  <div className="space-y-2.5">
+                    {dnaData.weaknesses?.map((w, i) => (
+                      <div
+                        key={i}
+                        className="flex items-center justify-between"
+                      >
+                        <span className="text-sm text-slate-300">
+                          {w.label}
+                        </span>
+                        <span className="text-sm font-bold text-[#ef4444]">
+                          {w.score}/10
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Score Bars – 10 Dimensions */}
+              {dnaData.scores && (
+                <div className="glass-panel rounded-xl p-6 border border-white/5">
+                  <h3 className="text-sm font-bold text-white mb-1">
+                    Toate Cele 10 Dimensiuni
+                  </h3>
+                  <p className="text-xs text-slate-500 mb-5">
+                    Fiecare bară arată scorul mașinii (violet) față de media
+                    flotei (linia aurie)
+                  </p>
+                  <div className="space-y-3">
+                    {Object.entries(dnaData.scores).map(([key, val]) => {
+                      const fleetVal = dnaData.fleetMeans?.[key] ?? 0;
+                      return (
+                        <div key={key} className="flex items-center gap-4">
+                          <span className="text-xs text-slate-400 w-32 text-right truncate font-medium">
+                            {key}
+                          </span>
+                          <div className="flex-1 h-5 bg-white/5 rounded-full relative overflow-hidden">
+                            <div
+                              className="absolute inset-y-0 left-0 bg-[#895af6]/50 rounded-full transition-all"
+                              style={{ width: `${(val / 10) * 100}%` }}
+                            />
+                            <div
+                              className="absolute top-0 h-full w-0.5 bg-[#D4AF37]"
+                              style={{ left: `${(fleetVal / 10) * 100}%` }}
+                              title={`Flotă: ${fleetVal}`}
+                            />
+                          </div>
+                          <span className="text-sm font-bold text-[#895af6] w-10 text-right">
+                            {val}/10
+                          </span>
+                        </div>
+                      );
+                    })}
+                    <div className="flex items-center gap-6 mt-2 ml-36">
+                      <div className="flex items-center gap-1.5">
+                        <div className="w-5 h-2.5 bg-[#895af6]/50 rounded-sm" />
+                        <span className="text-[10px] text-slate-500">
+                          Această mașină
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <div className="w-0.5 h-3.5 bg-[#D4AF37]" />
+                        <span className="text-[10px] text-slate-500">
+                          Media flotei
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Charts Section */}
+              <div className="space-y-8">
+                <div className="flex items-center justify-center gap-3">
+                  <div className="h-px flex-1 bg-gradient-to-r from-transparent via-[#895af6]/30 to-transparent" />
+                  <span className="text-xs font-bold uppercase tracking-[0.15em] text-slate-400">
+                    Grafice Informative
+                  </span>
+                  <div className="h-px flex-1 bg-gradient-to-r from-transparent via-[#895af6]/30 to-transparent" />
+                </div>
+
+                {/* Radar Chart */}
+                {dnaData.charts?.radar && (
+                  <div className="glass-panel rounded-xl p-6 border border-white/5">
+                    <h4 className="text-sm font-bold text-white mb-1 flex items-center gap-2">
+                      <span className="material-symbols-outlined text-[#895af6] text-lg">
+                        radar
+                      </span>
+                      Radar — 10 Dimensiuni
+                    </h4>
+                    <p className="text-xs text-slate-500 mb-4">
+                      Vizualizare polară a scorurilor pe fiecare dimensiune.
+                      Aria mai mare indică performanță mai bună, iar
+                      suprapunerea cu media flotei arată poziționarea relativă.
+                    </p>
+                    <img
+                      src={`data:image/png;base64,${dnaData.charts.radar}`}
+                      alt="DNA Radar"
+                      className="w-full max-w-2xl mx-auto rounded-xl shadow-lg shadow-black/30"
+                    />
+                  </div>
+                )}
+
+                {/* Comparison Chart */}
+                {dnaData.charts?.comparison && (
+                  <div className="glass-panel rounded-xl p-6 border border-white/5">
+                    <h4 className="text-sm font-bold text-white mb-1 flex items-center gap-2">
+                      <span className="material-symbols-outlined text-[#D4AF37] text-lg">
+                        compare
+                      </span>
+                      Comparație vs. Flotă
+                    </h4>
+                    <p className="text-xs text-slate-500 mb-4">
+                      Comparație directă între scorurile acestei mașini și media
+                      generală a flotei pe fiecare dimensiune. Barele verzi
+                      indică unde mașina excelează, iar cele roșii unde este sub
+                      medie.
+                    </p>
+                    <img
+                      src={`data:image/png;base64,${dnaData.charts.comparison}`}
+                      alt="Fleet Comparison"
+                      className="w-full max-w-2xl mx-auto rounded-xl shadow-lg shadow-black/30"
+                    />
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>

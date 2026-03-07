@@ -309,52 +309,56 @@ router.post("/masini", rolMiddleware("Director"), async (req, res) => {
   }
 });
 
-// PUT /api/masini/:id - Editare masina (doar Director)
-router.put("/masini/:id", rolMiddleware("Director"), async (req, res) => {
-  try {
-    const masina = await db.Masina.findByPk(req.params.id);
-    if (!masina) {
-      return res.status(404).json({ error: "Mașina nu a fost găsită" });
+// PUT /api/masini/:id - Editare masina (Director sau Mecanic pt scoruri)
+router.put(
+  "/masini/:id",
+  rolMiddleware("Director", "Mecanic"),
+  async (req, res) => {
+    try {
+      const masina = await db.Masina.findByPk(req.params.id);
+      if (!masina) {
+        return res.status(404).json({ error: "Mașina nu a fost găsită" });
+      }
+
+      const pretVechi = masina.pretEuro;
+      const pretNou = req.body.pretEuro;
+
+      // Dacă prețul scade → promoție automată
+      if (pretNou && pretNou < pretVechi) {
+        req.body.esteInPromotie = true;
+        req.body.pretPromotional = pretNou;
+        req.body.pretEuro = pretVechi; // păstrăm prețul original
+      }
+      // Dacă prețul crește sau rămâne la fel → nu e promoție
+      else if (pretNou && pretNou >= pretVechi) {
+        req.body.esteInPromotie = false;
+        req.body.pretPromotional = null;
+      }
+
+      await masina.update(req.body);
+      res.json(masina);
+
+      const actiune =
+        pretNou && pretNou < pretVechi ? "PROMOTIE_MASINA" : "EDITARE_MASINA";
+      const detaliiExtra =
+        pretNou && pretNou < pretVechi
+          ? ` Promoție: ${pretVechi.toLocaleString()}€ → ${pretNou.toLocaleString()}€.`
+          : pretNou && pretNou > pretVechi
+            ? ` Preț: ${pretVechi.toLocaleString()}€ → ${pretNou.toLocaleString()}€.`
+            : "";
+
+      await db.AuditLog.create({
+        actiune,
+        detalii: `${masina.marca} ${masina.model} (${masina.anFabricatie}) a fost actualizat.${detaliiExtra}`,
+        idUtilizator: req.user.id,
+        ip: req.ip || req.connection?.remoteAddress,
+      }).catch(() => {});
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Eroare la actualizarea mașinii" });
     }
-
-    const pretVechi = masina.pretEuro;
-    const pretNou = req.body.pretEuro;
-
-    // Dacă prețul scade → promoție automată
-    if (pretNou && pretNou < pretVechi) {
-      req.body.esteInPromotie = true;
-      req.body.pretPromotional = pretNou;
-      req.body.pretEuro = pretVechi; // păstrăm prețul original
-    }
-    // Dacă prețul crește sau rămâne la fel → nu e promoție
-    else if (pretNou && pretNou >= pretVechi) {
-      req.body.esteInPromotie = false;
-      req.body.pretPromotional = null;
-    }
-
-    await masina.update(req.body);
-    res.json(masina);
-
-    const actiune =
-      pretNou && pretNou < pretVechi ? "PROMOTIE_MASINA" : "EDITARE_MASINA";
-    const detaliiExtra =
-      pretNou && pretNou < pretVechi
-        ? ` Promoție: ${pretVechi.toLocaleString()}€ → ${pretNou.toLocaleString()}€.`
-        : pretNou && pretNou > pretVechi
-          ? ` Preț: ${pretVechi.toLocaleString()}€ → ${pretNou.toLocaleString()}€.`
-          : "";
-
-    await db.AuditLog.create({
-      actiune,
-      detalii: `${masina.marca} ${masina.model} (${masina.anFabricatie}) a fost actualizat.${detaliiExtra}`,
-      idUtilizator: req.user.id,
-      ip: req.ip || req.connection?.remoteAddress,
-    }).catch(() => {});
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Eroare la actualizarea mașinii" });
-  }
-});
+  },
+);
 
 // DELETE /api/masini/:id - Sterge masina (doar Director)
 router.delete("/masini/:id", rolMiddleware("Director"), async (req, res) => {
@@ -364,6 +368,28 @@ router.delete("/masini/:id", rolMiddleware("Director"), async (req, res) => {
       return res.status(404).json({ error: "Mașina nu a fost găsită" });
     }
     const info = `${masina.marca} ${masina.model} (${masina.anFabricatie})`;
+
+    // Șterge înregistrările dependente înainte de mașină
+    const reparatii = await db.Reparatie.findAll({
+      where: { idMasina: masina.idMasina },
+    });
+    for (const rep of reparatii) {
+      // Șterge notificările asociate reparației
+      await db.Notificare.destroy({ where: { idReparatie: rep.idReparatie } });
+      // Șterge legăturile piese-reparație
+      await db.PiesaReparatie.destroy({
+        where: { idReparatie: rep.idReparatie },
+      });
+      // Șterge reparația
+      await rep.destroy();
+    }
+    // Șterge imagini asociate
+    await db.ImagineMasina.destroy({ where: { idMasina: masina.idMasina } });
+    // Șterge test drive-uri asociate
+    await db.TestDrive.destroy({ where: { idMasina: masina.idMasina } });
+    // Șterge tranzacții asociate
+    await db.Tranzactie.destroy({ where: { idMasina: masina.idMasina } });
+
     await masina.destroy();
     res.json({ message: "Mașina a fost ștearsă" });
 
@@ -817,9 +843,52 @@ router.put(
       const reparatie = await db.Reparatie.findByPk(req.params.id);
       if (!reparatie)
         return res.status(404).json({ error: "Reparație negăsită" });
+
+      const oldStatus = reparatie.statusReparatie;
       await reparatie.update(req.body);
       const masina = await db.Masina.findByPk(reparatie.idMasina);
       res.json(reparatie);
+
+      // Dacă estimarea a fost RESPINSĂ (status → 4), gestionează mașina asociată
+      if (
+        req.body.statusReparatie === 4 &&
+        oldStatus !== 4 &&
+        masina &&
+        masina.status === "În service"
+      ) {
+        try {
+          // Verifică dacă mașina era deja în catalog (are imagini, test drive-uri sau tranzacții)
+          const [imgCount, tdCount, trCount] = await Promise.all([
+            db.ImagineMasina.count({ where: { idMasina: masina.idMasina } }),
+            db.TestDrive.count({ where: { idMasina: masina.idMasina } }),
+            db.Tranzactie.count({ where: { idMasina: masina.idMasina } }),
+          ]);
+          const esteExistenta = imgCount > 0 || tdCount > 0 || trCount > 0;
+
+          if (esteExistenta) {
+            // Mașină existentă din catalog → restaurare status „Disponibil"
+            await masina.update({ status: "Disponibil" });
+            console.log(
+              `[REJECT] Mașina #${masina.idMasina} (${masina.marca} ${masina.model}) restaurată la Disponibil.`,
+            );
+          } else {
+            // Mașină creată doar pentru service → ștergere completă
+            await db.Notificare.destroy({
+              where: { idReparatie: reparatie.idReparatie },
+            });
+            await db.PiesaReparatie.destroy({
+              where: { idReparatie: reparatie.idReparatie },
+            });
+            await reparatie.destroy();
+            await masina.destroy();
+            console.log(
+              `[REJECT] Mașina #${masina.idMasina} (${masina.marca} ${masina.model}) ștearsă (creată doar pt service).`,
+            );
+          }
+        } catch (cleanupErr) {
+          console.warn("Eroare la cleanup mașină după reject:", cleanupErr);
+        }
+      }
 
       await db.AuditLog.create({
         actiune: "ACTUALIZARE_REPARATIE",
@@ -1175,8 +1244,14 @@ router.get("/dashboard/stats", rolMiddleware("Director"), async (req, res) => {
       raw: true,
     });
 
+    // Mașini reparate, gata de publicare
+    const masiniReparate = await db.Masina.count({
+      where: { status: "Reparat" },
+    });
+
     res.json({
       masiniStoc: totalMasini,
+      masiniReparate,
       clientiActivi: totalClienti,
       cereriPending: testDrivePending + discountPending + tranzactiiPending,
       testDrivePending,

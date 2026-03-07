@@ -128,6 +128,7 @@ function DirectorDashboard() {
 
   const totalVanzari = stats?.totalVanzari || 0;
   const masiniStoc = stats?.masiniStoc || 0;
+  const masiniReparate = stats?.masiniReparate || 0;
   const cereriPending = stats?.cereriPending || 0;
   const clientiActivi = stats?.clientiActivi || 0;
   const vanzariFormatted =
@@ -318,6 +319,41 @@ function DirectorDashboard() {
           </div>
         </div>
       </section>
+
+      {/* Banner Mașini Reparate — gata de publicare */}
+      {masiniReparate > 0 && (
+        <div
+          onClick={() =>
+            navigate("/director/masini", { state: { filterReparat: true } })
+          }
+          className="glass-panel rounded-xl p-4 flex items-center justify-between gap-4 border border-teal-500/30 bg-teal-500/5 cursor-pointer hover:bg-teal-500/10 transition-all group"
+        >
+          <div className="flex items-center gap-4">
+            <div className="size-12 rounded-xl bg-teal-500/15 flex items-center justify-center">
+              <span className="material-symbols-outlined text-teal-400 text-2xl">
+                build_circle
+              </span>
+            </div>
+            <div>
+              <p className="text-white font-bold text-sm flex items-center gap-2">
+                <span className="size-2 rounded-full bg-teal-400 animate-pulse" />
+                {masiniReparate}{" "}
+                {masiniReparate === 1
+                  ? "mașină reparată așteaptă"
+                  : "mașini reparate așteaptă"}{" "}
+                publicarea în catalog
+              </p>
+              <p className="text-slate-400 text-xs mt-0.5">
+                Verifică scorurile atribuite de mecanic și publică vehiculele
+                disponibile pentru clienți
+              </p>
+            </div>
+          </div>
+          <span className="material-symbols-outlined text-teal-400 text-xl group-hover:translate-x-1 transition-transform">
+            arrow_forward
+          </span>
+        </div>
+      )}
 
       {/* Charts & Lists Section */}
       <section className="grid grid-cols-1 lg:grid-cols-12 gap-6">

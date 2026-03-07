@@ -51,6 +51,11 @@ export default (sequelize) => {
       locParcare: {
         type: DataTypes.STRING(255),
       },
+      vin: {
+        type: DataTypes.STRING(17),
+        allowNull: true,
+        comment: "Vehicle Identification Number (17 chars)",
+      },
       imaginePrincipala: {
         type: DataTypes.STRING(255),
       },

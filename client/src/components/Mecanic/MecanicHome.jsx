@@ -43,12 +43,14 @@ function MecanicHome() {
         const data = await apiGet("/api/reparatii");
         const mapped = data.map((r) => ({
           idReparatie: r.idReparatie,
+          idMasina: r.idMasina || r.Masina?.idMasina,
           masina: r.Masina
             ? {
                 marca: r.Masina.marca || "N/A",
                 model: r.Masina.model || "",
               }
             : { marca: "N/A", model: "" },
+          vin: r.Masina?.vin || null,
           statusReparatie: r.statusReparatie,
           descriereProblema: r.descriereProblema || "",
           dataInceput: r.dataInceput
@@ -102,6 +104,45 @@ function MecanicHome() {
   const [notificariLog, setNotificariLog] = useState([]);
   const [toast, setToast] = useState(null);
 
+  // Persist confirmedStarts in localStorage so the button doesn't reappear on refresh
+  const [confirmedStarts, setConfirmedStarts] = useState(() => {
+    try {
+      const stored = localStorage.getItem("confirmedStarts");
+      return stored ? new Set(JSON.parse(stored)) : new Set();
+    } catch {
+      return new Set();
+    }
+  });
+  const updateConfirmedStarts = (repId) => {
+    setConfirmedStarts((prev) => {
+      const next = new Set([...prev, repId]);
+      localStorage.setItem("confirmedStarts", JSON.stringify([...next]));
+      return next;
+    });
+  };
+
+  // ── Score modal state (afișat la finalizare) ──
+  const [showScoreModal, setShowScoreModal] = useState(false);
+  const [scoreRepId, setScoreRepId] = useState(null);
+
+  // ── VIN verification modal state ──
+  const [showVinModal, setShowVinModal] = useState(false);
+  const [vinInput, setVinInput] = useState("");
+  const [vinResult, setVinResult] = useState(null); // null | 'match' | 'mismatch' | 'no-vin'
+  const defaultScores = {
+    scorViteza: 5,
+    scorConfort: 5,
+    scorConsum: 5,
+    scorManevrabilitate: 5,
+    scorPret: 5,
+    scorDesignInterior: 5,
+    scorDesignExterior: 5,
+    scorSpatiu: 5,
+    scorAcceleratieCuplu: 5,
+    scorFrana: 5,
+  };
+  const [scores, setScores] = useState({ ...defaultScores });
+
   // ── Filtrare reparații ──
   const reparatiiFiltrate = reparatii.filter((r) => {
     if (searchVin) {
@@ -122,59 +163,73 @@ function MecanicHome() {
     if (!selected) return;
     // Mecanicul poate avansa doar de la 1 (Aprobat) la 2 (Finalizat)
     if (selected.statusReparatie !== 1 || newStatus !== 2) return;
-    setConfirmModal({ idReparatie: selected.idReparatie, newStatus });
+    // Deschide modalul de scoruri în loc de confirmare directă
+    setScoreRepId(selected.idReparatie);
+    setScores({ ...defaultScores });
+    setShowScoreModal(true);
   };
 
-  const confirmaSchimbare = async () => {
-    if (!confirmModal) return;
-    const { idReparatie, newStatus } = confirmModal;
-    const rep = reparatii.find((r) => r.idReparatie === idReparatie);
+  const confirmStartRepair = async () => {
+    if (!selected || selected.statusReparatie !== 1) return;
+    if (confirmedStarts.has(selected.idReparatie)) return;
     try {
-      const updateData = { statusReparatie: newStatus };
-      if (newStatus === 2) {
-        updateData.dataFinalizare = new Date().toISOString();
-      }
-      await apiPut(`/api/reparatii/${idReparatie}`, updateData);
-      // Creează notificare pentru Director
       await apiPost("/api/notificari", {
-        tip: newStatus === 2 ? "reparatie_finalizata" : "status_schimbat",
-        mesaj:
-          newStatus === 2
-            ? `Reparația pentru ${rep.masina.marca} ${rep.masina.model} a fost FINALIZATĂ.`
-            : `Status reparație ${rep.masina.marca} ${rep.masina.model} schimbat la ${statusLabels[newStatus]}.`,
-        idReparatie: idReparatie,
+        tip: "reparatie_inceputa",
+        mesaj: `Mecanicul ${selected.mecanic} a confirmat începutul reparației pentru ${selected.masina.marca} ${selected.masina.model}.`,
+        idReparatie: selected.idReparatie,
         destinatarRol: "Director",
       });
+      updateConfirmedStarts(selected.idReparatie);
+      setToast(
+        `Început confirmat → ${selected.masina.marca} ${selected.masina.model}`,
+      );
+      setTimeout(() => setToast(null), 3000);
     } catch (err) {
-      console.error(err);
+      console.error("Eroare la confirmare început:", err);
+      setToast("Eroare la trimiterea confirmării.");
+      setTimeout(() => setToast(null), 4000);
     }
-    // Schimbă status local
-    setReparatii((prev) =>
-      prev.map((r) =>
-        r.idReparatie === idReparatie
-          ? { ...r, statusReparatie: newStatus }
-          : r,
-      ),
-    );
-    // Notificare către Director
-    const now = new Date();
-    const msg = {
-      id: Date.now(),
-      ora: now.toLocaleTimeString("ro-RO", {
-        hour: "2-digit",
-        minute: "2-digit",
-      }),
-      data: now.toLocaleDateString("ro-RO"),
-      masina: `${rep.masina.marca} ${rep.masina.model}`,
-      an: rep.masina.anFabricatie,
-      delaStatus: statusLabels[rep.statusReparatie],
-      laStatus: statusLabels[newStatus],
-    };
-    setNotificariLog((prev) => [msg, ...prev]);
-    // Toast
-    setToast(`Status actualizat: ${msg.masina} → ${msg.laStatus}`);
-    setTimeout(() => setToast(null), 3000);
-    setConfirmModal(null);
+  };
+
+  const submitScoresAndFinalize = async () => {
+    if (!scoreRepId) return;
+    const rep = reparatii.find((r) => r.idReparatie === scoreRepId);
+    if (!rep) return;
+    try {
+      // 1. Salvează scorurile pe mașină + status "Reparat"
+      await apiPut(`/api/masini/${rep.idMasina}`, {
+        ...scores,
+        status: "Reparat",
+      });
+      // 2. Finalizează reparația
+      await apiPut(`/api/reparatii/${scoreRepId}`, {
+        statusReparatie: 2,
+        dataFinalizare: new Date().toISOString(),
+      });
+      // 3. Notifică directorul
+      await apiPost("/api/notificari", {
+        tip: "reparatie_finalizata",
+        mesaj: `Reparația pentru ${rep.masina.marca} ${rep.masina.model} a fost FINALIZATĂ. Scorurile au fost atribuite. Mașina este gata pentru catalog.`,
+        idReparatie: scoreRepId,
+        destinatarRol: "Director",
+      });
+      // 4. Update local
+      setReparatii((prev) =>
+        prev.map((r) =>
+          r.idReparatie === scoreRepId ? { ...r, statusReparatie: 2 } : r,
+        ),
+      );
+      setToast(
+        `Scoruri salvate & reparație finalizată → ${rep.masina.marca} ${rep.masina.model}`,
+      );
+      setTimeout(() => setToast(null), 3000);
+    } catch (err) {
+      console.error("Eroare la finalizare cu scoruri:", err);
+      setToast("Eroare la finalizare. Încearcă din nou.");
+      setTimeout(() => setToast(null), 4000);
+    }
+    setShowScoreModal(false);
+    setScoreRepId(null);
   };
 
   const totalPiese = selected
@@ -668,6 +723,17 @@ function MecanicHome() {
                 <span className="hidden sm:inline">Toate Reparațiile</span>
               </button>
             </div>
+            {selected &&
+              selected.statusReparatie === 1 &&
+              !confirmedStarts.has(selected.idReparatie) && (
+                <button
+                  onClick={confirmStartRepair}
+                  className="flex items-center gap-2 px-5 py-2.5 rounded-lg text-white font-bold text-sm shadow-lg transition transform bg-gradient-to-r from-amber-500 to-orange-500 hover:shadow-amber-500/20 hover:scale-105"
+                >
+                  <span className="material-symbols-outlined">play_arrow</span>
+                  Confirmă Începutul Reparației
+                </button>
+              )}
             <button
               onClick={() => cereConfirmare(2)}
               disabled={!selected || selected.statusReparatie !== 1}
@@ -813,6 +879,27 @@ function MecanicHome() {
                   </span>
                 </button>
               ))}
+              {/* VIN Verification Button */}
+              <button
+                onClick={() => {
+                  setVinInput("");
+                  setVinResult(null);
+                  setShowVinModal(true);
+                }}
+                disabled={!selected || selected.statusReparatie !== 1}
+                className={`flex flex-col items-center justify-center p-4 rounded-xl border transition group ${
+                  !selected || selected.statusReparatie !== 1
+                    ? "bg-white/[0.02] border-white/5 opacity-40 cursor-not-allowed"
+                    : "bg-white/[0.03] hover:bg-amber-500/20 border-white/5 hover:border-amber-500/50"
+                }`}
+              >
+                <span className="material-symbols-outlined text-2xl text-slate-400 group-hover:text-amber-400 mb-2 transition-colors">
+                  qr_code_scanner
+                </span>
+                <span className="text-xs font-medium text-slate-300 group-hover:text-white">
+                  Verificare VIN
+                </span>
+              </button>
             </div>
           </div>
 
@@ -850,103 +937,289 @@ function MecanicHome() {
         </section>
       </main>
 
-      {/* ═══ Modal Confirmare Status ═══ */}
-      {confirmModal &&
+      {/* ═══ Modal Verificare VIN ═══ */}
+      {showVinModal && selected && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            onClick={() => setShowVinModal(false)}
+          ></div>
+          <div className="relative glass-panel rounded-2xl w-full max-w-md p-6 shadow-2xl border border-white/10">
+            {/* Header */}
+            <div className="flex justify-center mb-4">
+              <div className="size-14 rounded-full bg-amber-500/20 flex items-center justify-center">
+                <span className="material-symbols-outlined text-3xl text-amber-400">
+                  qr_code_scanner
+                </span>
+              </div>
+            </div>
+            <h3 className="text-xl font-bold text-white text-center mb-1">
+              Verificare VIN
+            </h3>
+            <p className="text-sm text-slate-400 text-center mb-1">
+              <span className="text-white font-medium">
+                {selected.masina.marca} {selected.masina.model}
+              </span>
+            </p>
+            <p className="text-xs text-slate-500 text-center mb-5">
+              Introdu sau lipește VIN-ul scanat de pe vehicul pentru a verifica
+              dacă corespunde cu cel din baza de date.
+            </p>
+
+            {/* VIN Input */}
+            <div className="mb-5">
+              <label className="block text-xs font-semibold text-slate-400 mb-2 uppercase tracking-wider">
+                VIN scanat
+              </label>
+              <input
+                type="text"
+                value={vinInput}
+                onChange={(e) => {
+                  setVinInput(e.target.value.toUpperCase());
+                  setVinResult(null);
+                }}
+                maxLength={17}
+                placeholder="ex: WBAPH5C55BA123456"
+                className="w-full bg-[#0d0a17]/50 border border-white/10 text-white rounded-xl px-4 py-3 text-sm font-mono tracking-[0.2em] text-center focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500/50 placeholder-slate-600 uppercase"
+                autoFocus
+              />
+              <p className="text-xs text-slate-500 mt-1.5 text-center">
+                {vinInput.length}/17 caractere
+              </p>
+            </div>
+
+            {/* Result */}
+            {vinResult === "match" && (
+              <div className="mb-5 bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-4 flex items-center gap-3">
+                <div className="size-10 rounded-full bg-emerald-500/20 flex items-center justify-center shrink-0">
+                  <span className="material-symbols-outlined text-emerald-400 text-xl">
+                    verified
+                  </span>
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-emerald-400">
+                    VIN Verificat cu Succes
+                  </p>
+                  <p className="text-xs text-emerald-300/70 mt-0.5">
+                    VIN-ul scanat corespunde cu cel din baza de date.
+                  </p>
+                </div>
+              </div>
+            )}
+            {vinResult === "mismatch" && (
+              <div className="mb-5 bg-red-500/10 border border-red-500/20 rounded-xl p-4 flex items-center gap-3">
+                <div className="size-10 rounded-full bg-red-500/20 flex items-center justify-center shrink-0">
+                  <span className="material-symbols-outlined text-red-400 text-xl">
+                    gpp_bad
+                  </span>
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-red-400">
+                    VIN nu corespunde!
+                  </p>
+                  <p className="text-xs text-red-300/70 mt-0.5">
+                    VIN-ul scanat nu se potrivește cu cel din baza de date.
+                    Verifică vehiculul și contactează directorul.
+                  </p>
+                </div>
+              </div>
+            )}
+            {vinResult === "no-vin" && (
+              <div className="mb-5 bg-amber-500/10 border border-amber-500/20 rounded-xl p-4 flex items-center gap-3">
+                <div className="size-10 rounded-full bg-amber-500/20 flex items-center justify-center shrink-0">
+                  <span className="material-symbols-outlined text-amber-400 text-xl">
+                    warning
+                  </span>
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-amber-400">
+                    VIN lipsă în baza de date
+                  </p>
+                  <p className="text-xs text-amber-300/70 mt-0.5">
+                    Această mașină nu are un VIN înregistrat. Contactează
+                    directorul pentru a-l adăuga.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Buttons */}
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowVinModal(false)}
+                className="flex-1 px-4 py-3 rounded-xl border border-white/10 text-slate-300 hover:bg-white/5 hover:text-white text-sm font-medium transition"
+              >
+                Închide
+              </button>
+              <button
+                onClick={() => {
+                  const dbVin = selected.vin;
+                  if (!dbVin) {
+                    setVinResult("no-vin");
+                    return;
+                  }
+                  const scanned = vinInput.trim().toUpperCase();
+                  const stored = dbVin.trim().toUpperCase();
+                  setVinResult(scanned === stored ? "match" : "mismatch");
+                }}
+                disabled={vinInput.trim().length === 0}
+                className="flex-1 px-4 py-3 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 text-white font-bold text-sm transition flex items-center justify-center gap-2 shadow-lg hover:shadow-amber-500/20 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <span className="material-symbols-outlined text-lg">
+                  fact_check
+                </span>
+                Verifică VIN
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ Modal Scoruri + Finalizare ═══ */}
+      {showScoreModal &&
         (() => {
-          const rep = reparatii.find(
-            (r) => r.idReparatie === confirmModal.idReparatie,
-          );
-          const newLabel = statusLabels[confirmModal.newStatus];
-          const oldLabel = statusLabels[rep?.statusReparatie];
+          const rep = reparatii.find((r) => r.idReparatie === scoreRepId);
+          if (!rep) return null;
+          const scoreFields = [
+            { key: "scorViteza", label: "Viteză Maximă", icon: "speed" },
+            {
+              key: "scorConfort",
+              label: "Confort",
+              icon: "airline_seat_recline_extra",
+            },
+            { key: "scorConsum", label: "Consum", icon: "local_gas_station" },
+            {
+              key: "scorManevrabilitate",
+              label: "Manevrabilitate",
+              icon: "swap_driving_apps_wheel",
+            },
+            {
+              key: "scorPret",
+              label: "Raport Calitate-Preț",
+              icon: "price_check",
+            },
+            {
+              key: "scorDesignInterior",
+              label: "Design Interior",
+              icon: "dashboard",
+            },
+            {
+              key: "scorDesignExterior",
+              label: "Design Exterior",
+              icon: "directions_car",
+            },
+            { key: "scorSpatiu", label: "Spațiu", icon: "open_in_full" },
+            {
+              key: "scorAcceleratieCuplu",
+              label: "Accelerație / Cuplu",
+              icon: "bolt",
+            },
+            { key: "scorFrana", label: "Frânare", icon: "do_not_disturb_on" },
+          ];
+          const allSet = Object.values(scores).every((v) => v > 0);
           return (
             <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
               <div
                 className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-                onClick={() => setConfirmModal(null)}
+                onClick={() => setShowScoreModal(false)}
               ></div>
-              <div className="relative glass-panel rounded-2xl w-full max-w-md p-6 shadow-2xl border border-white/10">
-                {/* Icon */}
-                <div className="flex justify-center mb-5">
-                  <div
-                    className={`size-16 rounded-full flex items-center justify-center ${
-                      confirmModal.newStatus === 2
-                        ? "bg-emerald-500/20"
-                        : confirmModal.newStatus === 1
-                          ? "bg-amber-500/20"
-                          : "bg-slate-500/20"
-                    }`}
-                  >
-                    <span
-                      className={`material-symbols-outlined text-4xl ${
-                        confirmModal.newStatus === 2
-                          ? "text-emerald-400"
-                          : confirmModal.newStatus === 1
-                            ? "text-amber-400"
-                            : "text-slate-400"
-                      }`}
-                    >
-                      {confirmModal.newStatus === 2
-                        ? "check_circle"
-                        : confirmModal.newStatus === 1
-                          ? "play_circle"
-                          : "pause_circle"}
+              <div className="relative glass-panel rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto p-6 shadow-2xl border border-white/10">
+                {/* Header */}
+                <div className="flex justify-center mb-4">
+                  <div className="size-14 rounded-full bg-emerald-500/20 flex items-center justify-center">
+                    <span className="material-symbols-outlined text-3xl text-emerald-400">
+                      star_rate
                     </span>
                   </div>
                 </div>
-                {/* Text */}
-                <h3 className="text-xl font-bold text-white text-center mb-2">
-                  Confirmare Schimbare Status
+                <h3 className="text-xl font-bold text-white text-center mb-1">
+                  Atribuie Scoruri & Finalizează
                 </h3>
-                <p className="text-sm text-slate-400 text-center mb-6">
-                  Schimbi statusul reparației{" "}
+                <p className="text-sm text-slate-400 text-center mb-2">
                   <span className="text-white font-medium">
-                    {rep?.masina.marca} {rep?.masina.model}
-                  </span>{" "}
-                  din{" "}
-                  <span className="font-medium text-slate-300">{oldLabel}</span>{" "}
-                  în{" "}
-                  <span
-                    className={`font-bold ${
-                      confirmModal.newStatus === 2
-                        ? "text-emerald-400"
-                        : confirmModal.newStatus === 1
-                          ? "text-amber-400"
-                          : "text-slate-300"
-                    }`}
-                  >
-                    {newLabel}
+                    {rep.masina.marca} {rep.masina.model}
                   </span>
-                  ?
                 </p>
-                <p className="text-xs text-slate-500 text-center mb-6 flex items-center justify-center gap-1">
+                <p className="text-xs text-amber-400/80 text-center mb-5 flex items-center justify-center gap-1">
                   <span className="material-symbols-outlined text-[14px]">
-                    info
+                    warning
                   </span>
-                  Directorul va fi notificat automat. Statusul nu va mai putea
-                  fi modificat.
+                  Scorurile sunt obligatorii și nu vor putea fi modificate de
+                  Director.
                 </p>
+
+                {/* Scores Grid */}
+                <div className="grid grid-cols-1 gap-2.5 mb-6">
+                  {scoreFields.map((s) => (
+                    <div
+                      key={s.key}
+                      className="flex items-center gap-3 bg-white/[0.03] rounded-xl px-4 py-3 border border-white/5"
+                    >
+                      <span className="material-symbols-outlined text-[18px] text-slate-500 shrink-0">
+                        {s.icon}
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex justify-between items-center mb-1.5">
+                          <span className="text-xs text-slate-400">
+                            {s.label}
+                          </span>
+                          <span
+                            className={`text-sm font-bold font-mono ${scores[s.key] >= 7 ? "text-emerald-400" : scores[s.key] >= 4 ? "text-amber-400" : "text-red-400"}`}
+                          >
+                            {scores[s.key].toFixed(1)}
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0"
+                          max="10"
+                          step="0.5"
+                          value={scores[s.key]}
+                          onChange={(e) =>
+                            setScores((prev) => ({
+                              ...prev,
+                              [s.key]: parseFloat(e.target.value),
+                            }))
+                          }
+                          className="w-full h-1.5 rounded-full appearance-none cursor-pointer accent-[#895af6] bg-white/10"
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Average */}
+                <div className="flex items-center justify-between bg-[#895af6]/10 rounded-xl px-4 py-3 border border-[#895af6]/20 mb-5">
+                  <span className="text-sm font-medium text-[#895af6]">
+                    Scor Mediu General
+                  </span>
+                  <span className="text-lg font-bold font-mono text-white">
+                    {(
+                      Object.values(scores).reduce((a, b) => a + b, 0) / 10
+                    ).toFixed(1)}
+                  </span>
+                </div>
+
                 {/* Buttons */}
                 <div className="flex gap-3">
                   <button
-                    onClick={() => setConfirmModal(null)}
+                    onClick={() => {
+                      setShowScoreModal(false);
+                      setScoreRepId(null);
+                    }}
                     className="flex-1 px-4 py-3 rounded-xl border border-white/10 text-slate-300 hover:bg-white/5 hover:text-white text-sm font-medium transition"
                   >
                     Anulează
                   </button>
                   <button
-                    onClick={confirmaSchimbare}
-                    className={`flex-1 px-4 py-3 rounded-xl text-white font-bold text-sm transition flex items-center justify-center gap-2 shadow-lg ${
-                      confirmModal.newStatus === 2
-                        ? "bg-gradient-to-r from-teal-500 to-emerald-500 hover:shadow-emerald-500/20"
-                        : confirmModal.newStatus === 1
-                          ? "bg-amber-500 hover:bg-amber-600"
-                          : "bg-slate-600 hover:bg-slate-500"
-                    }`}
+                    onClick={submitScoresAndFinalize}
+                    disabled={!allSet}
+                    className="flex-1 px-4 py-3 rounded-xl bg-gradient-to-r from-teal-500 to-emerald-500 text-white font-bold text-sm transition flex items-center justify-center gap-2 shadow-lg hover:shadow-emerald-500/20 disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     <span className="material-symbols-outlined text-lg">
-                      send
+                      check_circle
                     </span>
-                    Confirmă & Notifică
+                    Salvează & Finalizează
                   </button>
                 </div>
               </div>

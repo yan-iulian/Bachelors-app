@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { apiGet, apiPut } from "../../config/apiHelper";
 
 const tipFiltre = [
@@ -41,6 +42,7 @@ function saveSet(key, s) {
 }
 
 function NotificariPanel() {
+  const navigate = useNavigate();
   const [notificari, setNotificari] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filterTip, setFilterTip] = useState("Toate");
@@ -238,6 +240,14 @@ function NotificariPanel() {
             tipFiltru: "reparatie",
             titlu: "Reparație finalizată",
           },
+          reparatie_inceputa: {
+            icon: "play_circle",
+            color: "text-orange-400",
+            bg: "bg-orange-500/10",
+            border: "border-orange-500/20",
+            tipFiltru: "reparatie",
+            titlu: "Reparație începută",
+          },
           status_schimbat: {
             icon: "swap_horiz",
             color: "text-blue-400",
@@ -267,7 +277,14 @@ function NotificariPanel() {
             mesaj: n.mesaj,
             data: n.createdAt,
             citit: n.citit || readSet.has(sk),
-            actiune: "/director/estimari",
+            actiune:
+              n.tip === "reparatie_finalizata"
+                ? "/director/masini"
+                : "/director/estimari",
+            actiuneState:
+              n.tip === "reparatie_finalizata"
+                ? { filterReparat: true }
+                : undefined,
             prioritate: !n.citit ? "urgent" : "normal",
             icon: cfg.icon,
             color: cfg.color,
@@ -913,15 +930,22 @@ function NotificariPanel() {
                       </button>
                     )}
                     {selectedNotif.actiune && (
-                      <a
-                        href={selectedNotif.actiune}
+                      <button
+                        onClick={() =>
+                          navigate(
+                            selectedNotif.actiune,
+                            selectedNotif.actiuneState
+                              ? { state: selectedNotif.actiuneState }
+                              : undefined,
+                          )
+                        }
                         className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-gradient-to-r from-[#895af6] to-purple-700 text-white font-bold text-sm shadow-lg hover:shadow-[#895af6]/20 hover:scale-105 transition transform"
                       >
                         <span className="material-symbols-outlined text-[18px]">
                           open_in_new
                         </span>
                         Deschide Pagina
-                      </a>
+                      </button>
                     )}
                   </div>
                 </div>

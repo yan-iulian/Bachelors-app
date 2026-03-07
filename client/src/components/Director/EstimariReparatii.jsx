@@ -51,6 +51,7 @@ function EstimariReparatii() {
       setEstimari(
         data.map((r) => ({
           id: r.idReparatie,
+          idMasina: r.idMasina || r.Masina?.idMasina,
           masina: r.Masina
             ? {
                 marca: r.Masina.marca,
@@ -191,9 +192,13 @@ function EstimariReparatii() {
     const est = estimari.find((e) => e.id === confirmModal.id);
     try {
       const newStatus = confirmModal.action === "aprobat" ? 1 : 4;
+      // Backend-ul gestionează automat mașina la respingere:
+      // - mașini create doar pt service → șterse
+      // - mașini existente din catalog → restaurate la "Disponibil"
       await apiPut(`/api/reparatii/${confirmModal.id}`, {
         statusReparatie: newStatus,
       });
+
       // Creează notificare pentru Mecanic
       await apiPost("/api/notificari", {
         tip:
@@ -203,7 +208,7 @@ function EstimariReparatii() {
         mesaj:
           confirmModal.action === "aprobat"
             ? `Estimarea de ${est?.costEstimatMecanic?.toLocaleString()} € pentru ${est?.masina?.marca} ${est?.masina?.model} a fost APROBATĂ. Puteți începe reparația.`
-            : `Estimarea de ${est?.costEstimatMecanic?.toLocaleString()} € pentru ${est?.masina?.marca} ${est?.masina?.model} a fost RESPINSĂ. Vă rugăm să refaceți estimarea.`,
+            : `Estimarea de ${est?.costEstimatMecanic?.toLocaleString()} € pentru ${est?.masina?.marca} ${est?.masina?.model} a fost RESPINSĂ.`,
         idReparatie: confirmModal.id,
         destinatarRol: "Mecanic",
       });
@@ -1484,12 +1489,18 @@ function EstimariReparatii() {
 
                   return (
                     <div className="bg-white/[0.02] rounded-xl p-5 border border-white/5">
-                      <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
-                        <span className="material-symbols-outlined text-[16px] text-[#895af6]">
-                          auto_awesome
-                        </span>
-                        Insight-uri Automate
-                      </h4>
+                      <div className="flex items-center justify-center gap-3 mb-5">
+                        <div className="h-px flex-1 bg-gradient-to-r from-transparent via-amber-400/40 to-transparent" />
+                        <div className="flex items-center gap-2.5">
+                          <span className="material-symbols-outlined text-[20px] text-amber-400">
+                            hub
+                          </span>
+                          <span className="text-[13px] font-bold uppercase tracking-[0.15em] text-slate-300">
+                            Insight-uri Automate
+                          </span>
+                        </div>
+                        <div className="h-px flex-1 bg-gradient-to-r from-transparent via-amber-400/40 to-transparent" />
+                      </div>
                       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
                         {insights.map((ins, i) => (
                           <div
